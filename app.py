@@ -428,13 +428,15 @@ with tab1:
     n_mod     = dft["Módulo"].nunique()
     # Sobrealocação: consultores em > 1 projeto
     proj_per_cons = dft.groupby("Consultor")["Projeto"].nunique()
-    n_sobre   = (proj_per_cons > 1).sum()
+    n_sobre     = (proj_per_cons > 1).sum()
+    n_pendentes = len(df_vagas)
 
     st.markdown(f"""
     <div class="kpi-grid">
         {kpi_html(n_cons, "Consultores")}
         {kpi_html(n_proj, "Projetos", "green")}
         {kpi_html(n_sobre, "Multialocados", "rose")}
+        {kpi_html(n_pendentes, "Alocações Pendentes", "amber")}
     </div>
     """, unsafe_allow_html=True)
 

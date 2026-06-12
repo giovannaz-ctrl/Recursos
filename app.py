@@ -445,21 +445,14 @@ with tab1:
 
     # Include Papel in treemap path so sombra is visually distinct
     _tp_cols = ["Consultor","Projeto","Módulo"]
-    if "Papel" in dft.columns:
-        _tp_cols = ["Consultor","Papel","Projeto","Módulo"]
+    # Deduplicate: each project counts once per consultant regardless of role
     treemap_df = (
-        dft.groupby(["Consultor","Projeto"] + (["Papel"] if "Papel" in dft.columns else []))
+        dft.drop_duplicates(subset=["Consultor","Projeto"])
+           .groupby(["Consultor","Projeto"])
            .agg(Atividades=("Módulo","count"))
            .reset_index()
     )
-    if "Papel" in treemap_df.columns:
-        # Label: append "(Sombra)" to project name for shadow rows
-        treemap_df["ProjetoLabel"] = treemap_df.apply(
-            lambda r: r["Projeto"] + (" 👥" if r["Papel"] == "Sombra" else " ⭐"),
-            axis=1
-        )
-    else:
-        treemap_df["ProjetoLabel"] = treemap_df["Projeto"]
+    treemap_df["ProjetoLabel"] = treemap_df["Projeto"]
     treemap_df["Projetos"] = treemap_df.groupby("Consultor")["Projeto"].transform("nunique")
 
     if not treemap_df.empty:
@@ -499,23 +492,33 @@ with tab1:
         st.plotly_chart(fig_tree, use_container_width=True)
 
         # Detail on click via selectbox
-        sel_cons = st.selectbox("Selecione um consultor para detalhar:",
-                                ["— todos —"] + sorted(dft["Consultor"].dropna().unique().tolist()),
+        # Detail selectors
+        _d1, _d2 = st.columns(2)
+        sel_cons = _d1.selectbox("Selecione um consultor para detalhar:",
+                                ["\u2014 todos \u2014"] + sorted(dft["Consultor"].dropna().unique().tolist()),
                                 key="t1_sel")
-        if sel_cons != "— todos —":
-            detail = dft[dft["Consultor"] == sel_cons]
+        sel_proj = _d2.selectbox("Selecione um projeto para detalhar:",
+                                ["\u2014 todos \u2014"] + sorted(dft["Projeto"].dropna().unique().tolist()),
+                                key="t1_sel_proj")
+        if sel_cons != "\u2014 todos \u2014" or sel_proj != "\u2014 todos \u2014":
+            detail = dft.copy()
+            if sel_cons != "\u2014 todos \u2014":
+                detail = detail[detail["Consultor"] == sel_cons]
+            if sel_proj != "\u2014 todos \u2014":
+                detail = detail[detail["Projeto"] == sel_proj]
             n_p = detail["Projeto"].nunique()
-            n_m = detail["Módulo"].nunique()
+            n_m = detail["M\xf3dulo"].nunique()
+            label = sel_cons if sel_cons != "\u2014 todos \u2014" else sel_proj
             st.markdown(
                 f"<div style='font-size:.85rem; color:#64748b; margin-bottom:.5rem;'>"
-                f"<b style='color:#1e293b;'>{sel_cons}</b>"
-                f" &nbsp;·&nbsp; {n_p} projeto{'s' if n_p>1 else ''}"
-                f" &nbsp;·&nbsp; {n_m} módulo{'s' if n_m>1 else ''}"
+                f"<b style='color:#1e293b;'>{label}</b>"
+                f" &nbsp;\xb7&nbsp; {n_p} projeto{'s' if n_p>1 else ''}"
+                f" &nbsp;\xb7&nbsp; {n_m} m\xf3dulo{'s' if n_m>1 else ''}"
                 f"</div>",
                 unsafe_allow_html=True,
             )
             st.dataframe(
-                detail[["Projeto","Cliente","Módulo"]].drop_duplicates(),
+                detail[["Consultor","Projeto","Cliente","M\xf3dulo"]].drop_duplicates(),
                 use_container_width=True, hide_index=True,
             )
 

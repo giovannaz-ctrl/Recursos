@@ -1031,7 +1031,7 @@ with tab3:
                 x_start = max(day_x - 0.45, min(x_start, day_x + 0.45))
                 x_end   = max(x_start + 0.05, min(x_end, day_x + 0.45))
 
-                show_legend = proj not in added_projects
+                show_legend = False
                 added_projects.add(proj)
                 atv_short = atv[:22] + "…" if len(atv) > 22 else atv
 
@@ -1125,7 +1125,7 @@ with tab3:
                 x=[None], y=[None], orientation="h",
                 name="▬  Atividade",
                 marker=dict(color="#6366f1", opacity=0.88),
-                showlegend=True,
+                showlegend=False,
                 legendgroup="__legend_atv",
             ))
             fig_gantt.add_trace(go.Bar(
@@ -1135,7 +1135,7 @@ with tab3:
                     color="#0ea5e9", opacity=0.80,
                     pattern=dict(shape="/", size=4, fgcolor="white", fgopacity=0.3),
                 ),
-                showlegend=True,
+                showlegend=False,
                 legendgroup="__legend_ws",
             ))
 

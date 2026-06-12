@@ -856,31 +856,7 @@ with tab3:
         if "t3_week_idx" not in st.session_state:
             st.session_state["t3_week_idx"] = _find_current_idx3()
 
-        n1, n2, n3, n4 = st.columns([1, 5, 1, 1])
-        with n1:
-            if st.button("◀ Anterior", key="t3_prev"):
-                if st.session_state["t3_week_idx"] > 0:
-                    st.session_state["t3_week_idx"] -= 1
-                    st.rerun()
-        with n3:
-            if st.button("Próxima ▶", key="t3_next"):
-                if st.session_state["t3_week_idx"] < len(all_mondays3) - 1:
-                    st.session_state["t3_week_idx"] += 1
-                    st.rerun()
-        with n4:
-            if st.button("Semana Atual", key="t3_today"):
-                st.session_state["t3_week_idx"] = _find_current_idx3()
-                st.rerun()
-
-        sel_idx3 = max(0, min(st.session_state["t3_week_idx"], len(all_mondays3) - 1))
-
-        with n2:
-            st.markdown(
-                f"<div style='text-align:center; padding:.4rem 0; font-weight:600; "
-                f"color:#6366f1; font-size:1rem;'>📅 {week_labels3[sel_idx3]}</div>",
-                unsafe_allow_html=True,
-            )
-
+        sel_idx3    = max(0, min(st.session_state["t3_week_idx"], len(all_mondays3) - 1))
         week_start3 = all_mondays3[sel_idx3]
         week_end3   = week_start3 + timedelta(days=6)
 

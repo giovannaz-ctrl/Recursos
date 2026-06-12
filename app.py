@@ -643,8 +643,7 @@ with tab1:
             body_rows += (
                 f"<tr style='border-bottom:1px solid #f1f5f9; background:white;'>"
                 f"<td style='padding:6px 10px; font-size:.82rem; white-space:nowrap; color:#1e293b;"
-                f"font-weight:500; min-width:160px; font-size:.78rem;'>{proj_short}"
-                f"<div style='font-size:.7rem; color:#92400e; font-weight:400;'>{client_row}</div></td>"
+                f"font-weight:500; min-width:120px; font-size:.78rem;'>{client_row}</td>"
                 f"{mod_cells}"
                 f"</tr>"
             )
@@ -654,7 +653,7 @@ with tab1:
             f"<table style='border-collapse:collapse; width:100%; font-size:.75rem; background:white; border-radius:8px;'>"
             f"<thead>"
             f"<tr style='background:#fff7ed; border-bottom:2px solid #fed7aa;'>"
-            f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:200px;'>Projeto</th>"
+            f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:120px;'>Cliente</th>"
             f"{header_cells}"
             f"</tr>"
             f"</thead>"

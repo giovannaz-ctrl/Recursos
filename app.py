@@ -818,9 +818,6 @@ with tab3:
         if fa_cons:
             dfa_all = dfa_all[dfa_all["Consultor"].isin(fa_cons)]
 
-        st.markdown("<hr style='margin:.6rem 0; border:none; border-top:1px solid #e2e8f0;'>",
-                    unsafe_allow_html=True)
-
         # Week dates
         _dates_act = dfa_all["Data"].dropna()
         if not _dates_act.empty:
@@ -898,9 +895,6 @@ with tab3:
                 f"color:#6366f1; font-size:1rem;'>📅 {week_labels3[sel_idx3]}</div>",
                 unsafe_allow_html=True,
             )
-
-        st.markdown("<hr style='margin:.6rem 0; border:none; border-top:1px solid #e2e8f0;'>",
-                    unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Gantt da Semana por Consultor</div>', unsafe_allow_html=True)
 

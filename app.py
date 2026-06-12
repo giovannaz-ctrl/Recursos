@@ -454,10 +454,18 @@ with tab1:
     st.markdown('<div class="section-title">Distribuição por Consultor (Treemap)</div>', unsafe_allow_html=True)
 
     # Include Papel in treemap path so sombra is visually distinct
-    _tp_cols = ["Consultor","Projeto","Módulo"]
+    # ── Split seniors and juniors ────────────────────────────────
+    _is_junior = "Senioridade" in dft.columns
+    if _is_junior:
+        dft_senior = dft[dft["Senioridade"].str.lower() != "junior"].copy()
+        dft_junior = dft[dft["Senioridade"].str.lower() == "junior"].copy()
+    else:
+        dft_senior = dft.copy()
+        dft_junior = pd.DataFrame()
+
     # Deduplicate: each project counts once per consultant regardless of role
     treemap_df = (
-        dft.drop_duplicates(subset=["Consultor","Projeto"])
+        dft_senior.drop_duplicates(subset=["Consultor","Projeto"])
            .groupby(["Consultor","Projeto"])
            .agg(Atividades=("Módulo","count"))
            .reset_index()
@@ -500,6 +508,54 @@ with tab1:
             ),
         )
         st.plotly_chart(fig_tree, use_container_width=True)
+
+    # ── Consultores Júnior ────────────────────────────────────────
+    if not dft_junior.empty:
+        st.markdown('<div class="section-title">👶 Consultores Júnior — Apoio nos Projetos</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:.82rem; color:#64748b; margin-bottom:.6rem;'>"
+            "Atuam como apoio e estão em processo de desenvolvimento. "
+            "Não considerar para avaliação de sobrecarga ou substituição."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        jr_df = (
+            dft_junior.drop_duplicates(subset=["Consultor","Projeto"])
+            .groupby("Consultor")["Projeto"]
+            .apply(lambda x: " · ".join(
+                p.split(" - ")[1].strip() if " - " in p else p[:30] for p in x.unique()
+            ))
+            .reset_index()
+            .rename(columns={"Projeto": "Projetos"})
+            .sort_values("Consultor")
+        )
+        jr_df["Qtd"] = dft_junior.drop_duplicates(subset=["Consultor","Projeto"]).groupby("Consultor")["Projeto"].nunique().values
+
+        # Render as compact horizontal bars
+        fig_jr = go.Figure()
+        for _, row in jr_df.iterrows():
+            fig_jr.add_trace(go.Bar(
+                x=[row["Qtd"]],
+                y=[row["Consultor"].split()[0] + " " + row["Consultor"].split()[-1]],
+                orientation="h",
+                marker_color="#94a3b8",
+                opacity=0.7,
+                text=row["Projetos"],
+                textposition="outside",
+                textfont=dict(size=10, color="#64748b"),
+                hovertemplate=f"<b>{row['Consultor']}</b><br>{row['Projetos']}<extra></extra>",
+                showlegend=False,
+            ))
+        fig_jr.update_layout(
+            height=max(120, len(jr_df) * 32 + 40),
+            margin=dict(l=0, r=0, t=5, b=0),
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+            yaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=11)),
+        )
+        st.plotly_chart(fig_jr, use_container_width=True)
+
 
         # Detail on click via selectbox
         # Detail selectors

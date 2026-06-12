@@ -340,7 +340,17 @@ def load_data(file_bytes: bytes):
     df_rec["Alocado"] = df_rec["Email"].apply(lambda e: e in allocated_emails)
     df_rec["Status"]  = df_rec["Alocado"].map({True: "Alocado", False: "Disponível"})
 
-    return df1, df2, df3, df_vagas, df_rec, df_golive
+    # ── Sheet 5: Vagas para Contratação ─────────────────────────
+    s5_key = next((k for k in sheets if "5" in k or "vaga" in k.lower()), None)
+    df_hiring = pd.DataFrame()
+    if s5_key:
+        try:
+            _h = pd.read_excel(BytesIO(file_bytes), sheet_name=sheets[s5_key], header=None)
+            df_hiring = pd.DataFrame({"Perfil": _h.iloc[:,0].dropna().str.strip().tolist()})
+        except Exception:
+            pass
+
+    return df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring
 
 
 def kpi_html(value, label, variant=""):
@@ -390,7 +400,7 @@ with st.spinner("Processando dados…"):
         except Exception as e:
             st.error(f"Não foi possível carregar o arquivo do repositório: {e}")
             st.stop()
-    df1, df2, df3, df_vagas, df_rec, df_golive = load_data(file_bytes)
+    df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring = load_data(file_bytes)
 
 # Build project→color map (shared across tabs)
 all_projects = sorted(set(df1["Projeto"]) | set(df2["Projeto"]) | set(df3["Projeto"]))
@@ -1468,6 +1478,45 @@ with tab5:
             dfr[["Consultor","Status","Modulos"]].rename(columns={"Modulos":"Especialidades"})
         ), file_name="recursos.xlsx",
            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        # ── Vagas para Contratação ────────────────────────────────
+        if not df_hiring.empty:
+            st.markdown('<div class="section-title">🔎 Vagas para Contratação</div>',
+                        unsafe_allow_html=True)
+            st.markdown(
+                "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
+                "Perfis em processo de contratação externa. Para cada vaga, consultores internos "
+                "com especialidade similar são listados como referência de perfil."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            _hiring_cols = st.columns(min(3, len(df_hiring)))
+            for _hi, _hrow in df_hiring.iterrows():
+                _perfil = _hrow["Perfil"]
+                # Find internal consultants with similar module
+                _mod_key = _perfil.replace("Consultor","").strip().split()[0] if _perfil else ""
+                _similares = df_rec[
+                    df_rec["Modulos"].str.contains(_mod_key, case=False, na=False)
+                ]["Consultor"].tolist() if _mod_key else []
+
+                _sim_html = "".join(
+                    f"<div style='font-size:.75rem; color:#475569; padding:1px 0;'>· {n.split()[0]} {n.split()[-1]}</div>"
+                    for n in _similares[:4]
+                ) if _similares else "<div style='font-size:.75rem; color:#94a3b8;'>Sem referência interna</div>"
+
+                with _hiring_cols[_hi % 3]:
+                    st.markdown(
+                        f"<div style='background:white; border:1.5px solid #f97316; border-radius:10px; "
+                        f"padding:.8rem 1rem; margin-bottom:.8rem;'>"
+                        f"<div style='font-weight:700; color:#f97316; font-size:.88rem; margin-bottom:.4rem;'>"
+                        f"🔎 {_perfil}</div>"
+                        f"<div style='font-size:.72rem; color:#64748b; font-weight:600; "
+                        f"text-transform:uppercase; letter-spacing:.04em; margin-bottom:.2rem;'>Perfil similar interno</div>"
+                        f"{_sim_html}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
 
 
 # ───────────────────────────────────────────────────────────────

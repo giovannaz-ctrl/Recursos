@@ -189,7 +189,7 @@ def load_data(file_bytes: bytes):
 
         # Vaga: no principal assigned
         if not split_consultants(raw_prin) and perfil not in ("", "nan"):
-            vagas_rows.append({"Projeto": projeto, "Perfil": perfil, "Cliente": client})
+            vagas_rows.append({"Projeto": projeto, "Perfil": perfil, "Cliente": client, "Fase": fase})
 
     df1 = pd.DataFrame(rows).drop_duplicates()
 
@@ -684,6 +684,7 @@ with tab1:
                 f"<tr style='border-bottom:1px solid #f1f5f9; background:white;'>"
                 f"<td style='padding:6px 10px; font-size:.82rem; white-space:nowrap; color:#1e293b;"
                 f"font-weight:500; min-width:100px; font-size:.75rem; padding:4px 8px;'>{client_row}</td>"
+                + "<td style='padding:4px 8px; font-size:.72rem; color:#475569;'>" + str(df_vagas_f[df_vagas_f['Projeto']==proj]['Fase'].iloc[0] if 'Fase' in df_vagas_f.columns and not df_vagas_f[df_vagas_f['Projeto']==proj].empty else '—') + "</td>"
                 f"{mod_cells}"
                 f"</tr>"
             )
@@ -694,6 +695,7 @@ with tab1:
             f"<thead>"
             f"<tr style='background:#fff7ed; border-bottom:2px solid #fed7aa;'>"
             f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:120px;'>Cliente</th>"
+            f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:80px;'>Fase</th>"
             f"{header_cells}"
             f"</tr>"
             f"</thead>"

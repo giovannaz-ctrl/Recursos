@@ -487,12 +487,16 @@ with tab1:
         dft_junior = pd.DataFrame()
 
     # Deduplicate: each project counts once per consultant regardless of role
+    _dedup_senior = dft_senior.drop_duplicates(subset=["Consultor","Projeto"])
+    _fase_map = _dedup_senior.set_index(["Consultor","Projeto"])["Fase"].to_dict() if "Fase" in _dedup_senior.columns else {}
     treemap_df = (
-        dft_senior.drop_duplicates(subset=["Consultor","Projeto"])
+        _dedup_senior
            .groupby(["Consultor","Projeto"])
            .agg(Atividades=("Módulo","count"))
            .reset_index()
     )
+    if _fase_map:
+        treemap_df["Fase"] = treemap_df.apply(lambda r: _fase_map.get((r["Consultor"],r["Projeto"]),"—"), axis=1)
     # Add Fase badge to project label in treemap
     if "Fase" in treemap_df.columns:
         _fase_badge = {"Realize": "🟢", "Prepare": "🔵", "Explore": "🟡"}
@@ -545,26 +549,30 @@ with tab1:
     if not dft_junior.empty:
         st.markdown('<div class="section-title">👶 Consultores Júnior — Apoio nos Projetos</div>',
                     unsafe_allow_html=True)
+        _jr_dedup = dft_junior.drop_duplicates(subset=["Consultor","Projeto"])
         jr_df = (
-            dft_junior.drop_duplicates(subset=["Consultor","Projeto"])
-            .groupby("Consultor")["Projeto"]
-            .apply(lambda x: " · ".join(
-                p.split(" - ")[1].strip() if " - " in p else p[:30] for p in x.unique()
-            ))
+            _jr_dedup
+            .groupby("Consultor")
+            .apply(lambda g: pd.Series({
+                "Projetos em que atua": " · ".join(
+                    p.split(" - ")[1].strip() if " - " in p else p[:30] for p in g["Projeto"].unique()
+                ),
+                "Fase": " · ".join(g["Fase"].unique()) if "Fase" in g.columns else "—",
+                "Nº Projetos": g["Projeto"].nunique(),
+            }))
             .reset_index()
-            .rename(columns={"Projeto": "Projetos"})
             .sort_values("Consultor")
         )
-        jr_df["Qtd"] = dft_junior.drop_duplicates(subset=["Consultor","Projeto"]).groupby("Consultor")["Projeto"].nunique().values
 
         st.dataframe(
-            jr_df.rename(columns={"Projetos": "Projetos em que atua", "Qtd": "Nº Projetos"}),
+            jr_df[["Consultor","Nº Projetos","Fase","Projetos em que atua"]],
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Consultor":           st.column_config.TextColumn("Consultor",          width="medium"),
-                "Nº Projetos":         st.column_config.NumberColumn("Nº Projetos",      width="small"),
-                "Projetos em que atua": st.column_config.TextColumn("Projetos em que atua", width="large"),
+                "Consultor":            st.column_config.TextColumn("Consultor",             width="medium"),
+                "Nº Projetos":          st.column_config.NumberColumn("Nº Projetos",         width="small"),
+                "Fase":                 st.column_config.TextColumn("Fase",                  width="small"),
+                "Projetos em que atua": st.column_config.TextColumn("Projetos em que atua",  width="large"),
             }
         )
 
@@ -635,15 +643,11 @@ with tab1:
 
     # ── Alocações Pendentes — matriz estilo recursos ─────────────
     if not df_vagas.empty:
-        # Filter by perfil
-        _all_perfis_vagas = sorted(df_vagas["Perfil"].dropna().unique())
-        _f_perfil = st.multiselect(
-            "Filtrar Alocações Pendentes por Perfil",
-            _all_perfis_vagas,
-            key="vagas_perfil",
-            placeholder="Todos os perfis…",
-        )
-        df_vagas_f = df_vagas[df_vagas["Perfil"].isin(_f_perfil)] if _f_perfil else df_vagas.copy()
+        # Apply main filters to pending allocations
+        df_vagas_f = df_vagas.copy()
+        if f_proj: df_vagas_f = df_vagas_f[df_vagas_f["Projeto"].isin(f_proj)]
+        if f_cli:  df_vagas_f = df_vagas_f[df_vagas_f["Cliente"].isin(f_cli)]
+        if f_mod:  df_vagas_f = df_vagas_f[df_vagas_f["Perfil"].isin(f_mod)]
 
         n_vagas      = len(df_vagas_f)
         n_proj_vagas = df_vagas_f["Projeto"].nunique()

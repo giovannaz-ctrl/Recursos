@@ -165,6 +165,9 @@ def load_data(file_bytes: bytes):
         golive      = pd.Timestamp(golive_raw) if golive_raw is not None and pd.notna(golive_raw) else None
         senior_raw  = row.get("Senioridade", None)
         senioridade = str(senior_raw).strip() if senior_raw is not None and pd.notna(senior_raw) else "Sênior"
+        fase_raw    = row.get("Fase", None)
+        fase        = str(fase_raw).strip() if fase_raw is not None and pd.notna(fase_raw) else "—"
+
 
         # Principal consultant(s)
         for part in (raw_prin.split(",") if raw_prin.strip() not in ("","nan") else []):
@@ -173,7 +176,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Principal"})
+                         "Senioridade": senioridade, "Papel": "Principal", "Fase": fase})
 
         # Secondary / shadow consultant(s)
         for part in (raw_secu.split(",") if raw_secu.strip() not in ("","nan") else []):
@@ -182,7 +185,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Sombra"})
+                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase})
 
         # Vaga: no principal assigned
         if not split_consultants(raw_prin) and perfil not in ("", "nan"):
@@ -432,17 +435,19 @@ with tab1:
 
     # ── Filters ─────────────────────────────────────────────────
     with st.expander("🔍 Filtros", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         f_cons  = c1.multiselect("Consultor",  sorted(df1["Consultor"].dropna().unique()), key="t1_cons")
         f_proj  = c2.multiselect("Projeto",    sorted(df1["Projeto"].dropna().unique()),   key="t1_proj")
         f_cli   = c3.multiselect("Cliente",    sorted(df1["Cliente"].dropna().unique()),   key="t1_cli")
         f_mod   = c4.multiselect("Módulo",     sorted(df1["Módulo"].dropna().unique()),    key="t1_mod")
+        f_fase  = c5.multiselect("Fase",       sorted(df1["Fase"].dropna().unique()) if "Fase" in df1.columns else [], key="t1_fase")
 
     dft = df1.copy()
     if f_cons: dft = dft[dft["Consultor"].isin(f_cons)]
     if f_proj: dft = dft[dft["Projeto"].isin(f_proj)]
     if f_cli:  dft = dft[dft["Cliente"].isin(f_cli)]
     if f_mod:  dft = dft[dft["Módulo"].isin(f_mod)]
+    if f_fase: dft = dft[dft["Fase"].isin(f_fase)]
 
     # Global max (unfiltered) keeps color scale stable across filters
     _global_max_proj = max(df1.groupby("Consultor")["Projeto"].nunique().max(), 2)
@@ -486,7 +491,15 @@ with tab1:
            .agg(Atividades=("Módulo","count"))
            .reset_index()
     )
-    treemap_df["ProjetoLabel"] = treemap_df["Projeto"]
+    # Add Fase badge to project label in treemap
+    if "Fase" in treemap_df.columns:
+        _fase_badge = {"Realize": "🟢", "Prepare": "🔵", "Explore": "🟡"}
+        treemap_df["ProjetoLabel"] = treemap_df.apply(
+            lambda r: f"{_fase_badge.get(r.get('Fase',''), '')} {r['Projeto']}".strip(),
+            axis=1
+        )
+    else:
+        treemap_df["ProjetoLabel"] = treemap_df["Projeto"]
     treemap_df["Projetos"] = treemap_df.groupby("Consultor")["Projeto"].transform("nunique")
 
     if not treemap_df.empty:
@@ -592,14 +605,14 @@ with tab1:
     # Use df1 (full unfiltered) as source for Sombra so filter on consultant doesn't hide shadows
     if "Papel" in dft.columns and "Papel" in df1.columns:
         _prin = (dft[dft["Papel"] == "Principal"]
-                 [["Cliente","Projeto","Módulo","Consultor"]]
+                 [["Cliente","Projeto","Fase","Módulo","Consultor"]]
                  .rename(columns={"Consultor":"Consultor Principal"}))
         _somb = (df1[df1["Papel"] == "Sombra"]
                  [["Projeto","Módulo","Consultor"]]
                  .rename(columns={"Consultor":"Consultor Sombra"})
                  .drop_duplicates())
         display = _prin.merge(_somb, on=["Projeto","Módulo"], how="left")
-        display = display[["Cliente","Projeto","Módulo","Consultor Principal","Consultor Sombra"]].drop_duplicates()
+        display = display[["Cliente","Projeto","Fase","Módulo","Consultor Principal","Consultor Sombra"]].drop_duplicates()
         display["Consultor Sombra"] = display["Consultor Sombra"].fillna("—")
     else:
         display = dft[["Consultor","Cliente","Projeto","Módulo"]].copy()
@@ -608,6 +621,7 @@ with tab1:
                  column_config={
                      "Cliente":              st.column_config.TextColumn("Cliente",              width="small"),
                      "Projeto":              st.column_config.TextColumn("Projeto",              width="large"),
+                     "Fase":                 st.column_config.TextColumn("Fase",                 width="small"),
                      "Módulo":               st.column_config.TextColumn("Módulo",               width="medium"),
                      "Consultor Principal":  st.column_config.TextColumn("Consultor Principal",  width="medium"),
                      "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",            width="medium"),

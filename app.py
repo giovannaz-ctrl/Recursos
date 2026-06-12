@@ -551,60 +551,47 @@ with tab1:
                        file_name="alocacao_consultores.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # ── Vagas abertas (always-visible alert) ─────────────────────
+    # ── Alocações Pendentes ───────────────────────────────────────
     if not df_vagas.empty:
         n_vagas      = len(df_vagas)
         n_proj_vagas = df_vagas["Projeto"].nunique()
 
-        proj_groups = df_vagas.groupby("Projeto")
-        rows_html = ""
-        for proj, grp in proj_groups:
+        # Build compact cards grouped by project
+        cards_html = ""
+        for proj, grp in df_vagas.groupby("Projeto"):
             client = grp["Cliente"].iloc[0]
             perfis = grp["Perfil"].tolist()
-            for i, perfil in enumerate(perfis):
-                if i == 0:
-                    proj_cell = (
-                        f"<td rowspan='{len(perfis)}' style='vertical-align:top;"
-                        f"padding:6px 12px; border-bottom:1px solid #fed7aa;'>"
-                        f"<span style='font-weight:600;color:#1e293b;'>{proj}</span><br>"
-                        f"<span style='font-size:.72rem;color:#92400e;'>{client}</span></td>"
-                    )
-                else:
-                    proj_cell = ""
-                rows_html += (
-                    f"<tr>"
-                    f"{proj_cell}"
-                    f"<td style='padding:6px 12px;border-bottom:1px solid #fed7aa;color:#1e293b;'>{perfil}</td>"
-                    f"<td style='padding:6px 12px;border-bottom:1px solid #fed7aa;'>"
-                    f"<span style='background:#fee2e2;color:#dc2626;border-radius:4px;"
-                    f"padding:2px 8px;font-size:.72rem;font-weight:600;'>Sem consultor</span>"
-                    f"</td>"
-                    f"</tr>"
-                )
+            tags = "".join(
+                f"<span style='background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; "
+                f"border-radius:4px; padding:2px 10px; font-size:.75rem; font-weight:500; "
+                f"margin-right:4px; margin-bottom:4px; display:inline-block;'>{p}</span>"
+                for p in perfis
+            )
+            proj_short = proj.split(" - ", 1)[1] if " - " in proj else proj
+            cards_html += f"""
+            <div style="display:flex; align-items:flex-start; gap:1rem;
+                        padding:.6rem 0; border-bottom:1px solid #fed7aa;">
+              <div style="min-width:220px; max-width:260px;">
+                <div style="font-size:.83rem; font-weight:600; color:#1e293b;">{proj_short}</div>
+                <div style="font-size:.72rem; color:#92400e; margin-top:1px;">{client}</div>
+              </div>
+              <div style="flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
+                {tags}
+              </div>
+            </div>"""
 
         st.markdown(f"""
         <div style="background:#fff7ed; border:1.5px solid #fb923c; border-radius:10px;
                     padding:1rem 1.2rem; margin-top:1.2rem;">
           <div style="display:flex; align-items:center; gap:.6rem; margin-bottom:.8rem;">
-            <span style="font-size:1.3rem;">⚠️</span>
-            <span style="font-weight:700; color:#c2410c; font-size:.95rem;">
-              {n_vagas} vaga{'s' if n_vagas > 1 else ''} sem consultor alocado
+            <span style="font-size:1.1rem;">⚠️</span>
+            <span style="font-weight:700; color:#c2410c; font-size:.9rem;">
+              {n_vagas} alocaç{'ões' if n_vagas > 1 else 'ão'} pendente{'s' if n_vagas > 1 else ''}
               &nbsp;·&nbsp;
               {n_proj_vagas} projeto{'s' if n_proj_vagas > 1 else ''} afetado{'s' if n_proj_vagas > 1 else ''}
             </span>
           </div>
-          <table style="width:100%; border-collapse:collapse; font-size:.83rem;">
-            <thead>
-              <tr style="background:#fed7aa;">
-                <th style="padding:5px 12px; text-align:left; color:#7c2d12;
-                           font-weight:600; border-radius:4px 0 0 0;">Projeto</th>
-                <th style="padding:5px 12px; text-align:left; color:#7c2d12; font-weight:600;">Perfil / Módulo</th>
-                <th style="padding:5px 12px; text-align:left; color:#7c2d12;
-                           font-weight:600; border-radius:0 4px 0 0;">Status</th>
-              </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-          </table>
+          {cards_html}
         </div>
         """, unsafe_allow_html=True)
 

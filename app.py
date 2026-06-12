@@ -167,6 +167,8 @@ def load_data(file_bytes: bytes):
         senioridade = str(senior_raw).strip() if senior_raw is not None and pd.notna(senior_raw) else "Sênior"
         fase_raw    = row.get("Fase", None)
         fase        = str(fase_raw).strip() if fase_raw is not None and pd.notna(fase_raw) else "—"
+        comp_raw    = row.get("Complexidade", None)
+        complexidade = str(comp_raw).strip() if comp_raw is not None and pd.notna(comp_raw) else "Média"
 
 
         # Principal consultant(s)
@@ -176,7 +178,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Principal", "Fase": fase})
+                         "Senioridade": senioridade, "Papel": "Principal", "Fase": fase, "Complexidade": complexidade})
 
         # Secondary / shadow consultant(s)
         for part in (raw_secu.split(",") if raw_secu.strip() not in ("","nan") else []):
@@ -185,7 +187,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase})
+                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase, "Complexidade": complexidade})
 
         # Vaga: no principal assigned
         if not split_consultants(raw_prin) and perfil not in ("", "nan"):
@@ -1479,27 +1481,99 @@ with tab5:
         ), file_name="recursos.xlsx",
            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        # ── Vagas para Contratação ────────────────────────────────
-        if not df_hiring.empty:
-            st.markdown('<div class="section-title">🔎 Vagas para Contratação</div>',
-                        unsafe_allow_html=True)
-            st.markdown(
-                "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-                "Perfis em processo de contratação externa. Para cada vaga, consultores internos "
-                "com especialidade similar são listados como referência de perfil."
-                "</div>",
-                unsafe_allow_html=True,
-            )
+        # ── Análise de Capacidade e Contratação ──────────────────
+        st.markdown('<div class="section-title">📊 Análise de Capacidade e Necessidade de Contratação</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
+            "Baseado na complexidade dos projetos: <b>Alta</b> = dedicação exclusiva · "
+            "<b>Média</b> = até 2 projetos · <b>Baixa</b> = até 3 projetos."
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
-            _hiring_cols = st.columns(min(3, len(df_hiring)))
+        import math as _math
+        _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
+        _MAX   = 3.0
+
+        # Consultant slots consumed
+        _cons_slots = {}
+        if "Complexidade" in df1.columns:
+            for _, _r in df1[df1["Papel"]=="Principal"].drop_duplicates(subset=["Consultor","Projeto"]).iterrows():
+                _s = _SLOTS.get(_r.get("Complexidade","Média"), 1.5)
+                _cons_slots[_r["Consultor"]] = _cons_slots.get(_r["Consultor"], 0) + _s
+
+        # Module free capacity
+        _mod_cap = {}
+        _dfr_sr = df_rec[df_rec["Senioridade"].str.lower() != "junior"] if "Senioridade" in df_rec.columns else df_rec
+        for _, _rr in _dfr_sr.iterrows():
+            _free = max(0, _MAX - _cons_slots.get(_rr["Consultor"], 0))
+            for _m in (_rr.get("Especialidades") or []):
+                _mod_cap[_m] = _mod_cap.get(_m, 0) + _free
+
+        # Module demand from open vacancies
+        _mod_dem = {}
+        for _, _r in df_vagas.iterrows():
+            _perf = _r.get("Perfil","")
+            _proj = _r.get("Projeto","")
+            _comp_rows = df1[df1["Projeto"] == _proj]["Complexidade"] if "Complexidade" in df1.columns else pd.Series(["Média"])
+            _comp  = _comp_rows.iloc[0] if not _comp_rows.empty else "Média"
+            _slots = _SLOTS.get(_comp, 1.5)
+            _mod_key = _perf.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if _perf else ""
+            if _mod_key:
+                _mod_dem[_mod_key] = _mod_dem.get(_mod_key, 0) + _slots
+
+        # Build results
+        _cap_rows = []
+        for _mod in sorted(set(_mod_dem.keys()) | set(_mod_cap.keys())):
+            _dem  = _mod_dem.get(_mod, 0)
+            _cap  = _mod_cap.get(_mod, 0)
+            _gap  = max(0, _dem - _cap)
+            _hire = _math.ceil(_gap / _MAX) if _gap > 0 else 0
+            if _dem > 0 or _hire > 0:
+                _cap_rows.append({
+                    "Módulo": _mod,
+                    "Demanda": round(_dem, 1),
+                    "Capacidade livre": round(_cap, 1),
+                    "Gap": round(_gap, 1),
+                    "Contratar": int(_hire),
+                    "Status": "⚠️ Gap" if _hire > 0 else "✅ Coberto",
+                })
+
+        _cap_df = pd.DataFrame(_cap_rows).sort_values("Contratar", ascending=False) if _cap_rows else pd.DataFrame()
+        _total_hire = int(_cap_df["Contratar"].sum()) if not _cap_df.empty else 0
+        _n_gap = int((_cap_df["Contratar"] > 0).sum()) if not _cap_df.empty else 0
+
+        st.markdown(f"""
+        <div class="kpi-grid">
+            {kpi_html(_total_hire, "Contratações necessárias", "rose")}
+            {kpi_html(_n_gap,      "Módulos com gap",          "amber")}
+            {kpi_html(len(df_hiring) if not df_hiring.empty else 0, "Vagas já abertas", "green")}
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not _cap_df.empty:
+            st.dataframe(_cap_df, use_container_width=True, hide_index=True,
+                column_config={
+                    "Módulo":           st.column_config.TextColumn("Módulo",            width="small"),
+                    "Demanda":          st.column_config.NumberColumn("Demanda (slots)",  width="small", format="%.1f"),
+                    "Capacidade livre": st.column_config.NumberColumn("Cap. livre",       width="small", format="%.1f"),
+                    "Gap":              st.column_config.NumberColumn("Gap",              width="small", format="%.1f"),
+                    "Contratar":        st.column_config.NumberColumn("Contratar",        width="small"),
+                    "Status":           st.column_config.TextColumn("Status",             width="small"),
+                })
+
+        # Vagas em aberto
+        if not df_hiring.empty:
+            st.markdown('<div class="section-title">🔎 Vagas em Processo de Contratação</div>',
+                        unsafe_allow_html=True)
+            _hcols = st.columns(min(3, len(df_hiring)))
             for _hi, _hrow in df_hiring.iterrows():
-                _perfil = _hrow["Perfil"]
-                with _hiring_cols[_hi % 3]:
+                with _hcols[_hi % 3]:
                     st.markdown(
                         f"<div style='background:white; border:1.5px solid #f97316; border-radius:10px; "
                         f"padding:.8rem 1rem; margin-bottom:.8rem;'>"
-                        f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>"
-                        f"🔎 {_perfil}</div>"
+                        f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>🔎 {_hrow['Perfil']}</div>"
                         f"</div>",
                         unsafe_allow_html=True,
                     )

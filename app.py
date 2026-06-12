@@ -532,29 +532,16 @@ with tab1:
         )
         jr_df["Qtd"] = dft_junior.drop_duplicates(subset=["Consultor","Projeto"]).groupby("Consultor")["Projeto"].nunique().values
 
-        # Render as compact horizontal bars
-        fig_jr = go.Figure()
-        for _, row in jr_df.iterrows():
-            fig_jr.add_trace(go.Bar(
-                x=[row["Qtd"]],
-                y=[row["Consultor"].split()[0] + " " + row["Consultor"].split()[-1]],
-                orientation="h",
-                marker_color="#94a3b8",
-                opacity=0.7,
-                text=row["Projetos"],
-                textposition="outside",
-                textfont=dict(size=10, color="#64748b"),
-                hovertemplate=f"<b>{row['Consultor']}</b><br>{row['Projetos']}<extra></extra>",
-                showlegend=False,
-            ))
-        fig_jr.update_layout(
-            height=max(120, len(jr_df) * 32 + 40),
-            margin=dict(l=0, r=0, t=5, b=0),
-            plot_bgcolor="white", paper_bgcolor="white",
-            xaxis=dict(showgrid=False, zeroline=False, visible=False),
-            yaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=11)),
+        st.dataframe(
+            jr_df.rename(columns={"Projetos": "Projetos em que atua", "Qtd": "Nº Projetos"}),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Consultor":           st.column_config.TextColumn("Consultor",          width="medium"),
+                "Nº Projetos":         st.column_config.NumberColumn("Nº Projetos",      width="small"),
+                "Projetos em que atua": st.column_config.TextColumn("Projetos em que atua", width="large"),
+            }
         )
-        st.plotly_chart(fig_jr, use_container_width=True)
 
 
         # Detail on click via selectbox

@@ -467,38 +467,28 @@ with tab1:
             values="Atividades",
             color="Projetos",
             color_continuous_scale=[
-                [0.0,  "#fef9c3"],   # 1 projeto  – amarelo muito suave
-                [0.35, "#fcd34d"],   # alguns     – amarelo dourado
-                [0.65, "#f97316"],   # vários     – laranja suave
-                [1.0,  "#dc2626"],   # muitos     – vermelho
+                [0.0,  "#fff176"],
+                [0.35, "#ffb74d"],
+                [0.65, "#ef6c00"],
+                [1.0,  "#b71c1c"],
             ],
             range_color=[1, _global_max_proj],
             custom_data=["Projetos"],
         )
         fig_tree.update_traces(
-            hovertemplate=(
-                "<b>%{label}</b><br>"
-                "Projetos: %{customdata[0]}<br>"
-                "<extra></extra>"
-            ),
+            hovertemplate="<b>%{label}</b><br>Projetos: %{customdata[0]}<extra></extra>",
             textfont_size=13,
-            marker=dict(
-                line=dict(width=2, color="white"),
-                pad=dict(t=20, l=4, r=4, b=4),
-            ),
         )
         fig_tree.update_layout(
             margin=dict(l=0, r=0, t=10, b=0),
-            height=440,
+            height=420,
             coloraxis_colorbar=dict(
                 title="Projetos",
                 tickmode="linear",
                 tick0=1,
                 dtick=1,
-                thickness=12,
-                len=0.5,
-                tickfont=dict(size=11),
-                titlefont=dict(size=11),
+                thickness=14,
+                len=0.6,
             ),
         )
         st.plotly_chart(fig_tree, use_container_width=True)

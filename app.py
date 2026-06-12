@@ -767,7 +767,7 @@ with tab2:
         # ── Full list ─────────────────────────────────────────────
         if not week_ws.empty:
             st.markdown('<div class="section-title">Detalhes dos Workshops</div>', unsafe_allow_html=True)
-            show = week_ws[["Projeto","Cliente","Workshop","Consultor","DataInicio","DataFim"]].copy()
+            show = week_ws[["Projeto","Workshop","Consultor","DataInicio","DataFim"]].copy()
             show["DataInicio"] = show["DataInicio"].dt.strftime("%d/%m/%Y")
             show["DataFim"]    = show["DataFim"].dt.strftime("%d/%m/%Y").fillna("—")
             st.dataframe(show, use_container_width=True, hide_index=True)

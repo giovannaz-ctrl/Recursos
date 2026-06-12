@@ -619,8 +619,18 @@ with tab1:
 
     # ── Alocações Pendentes — matriz estilo recursos ─────────────
     if not df_vagas.empty:
-        n_vagas      = len(df_vagas)
-        n_proj_vagas = df_vagas["Projeto"].nunique()
+        # Filter by perfil
+        _all_perfis_vagas = sorted(df_vagas["Perfil"].dropna().unique())
+        _f_perfil = st.multiselect(
+            "Filtrar Alocações Pendentes por Perfil",
+            _all_perfis_vagas,
+            key="vagas_perfil",
+            placeholder="Todos os perfis…",
+        )
+        df_vagas_f = df_vagas[df_vagas["Perfil"].isin(_f_perfil)] if _f_perfil else df_vagas.copy()
+
+        n_vagas      = len(df_vagas_f)
+        n_proj_vagas = df_vagas_f["Projeto"].nunique()
 
         st.markdown(
             f"<div style='font-size:.82rem; color:#c2410c; font-weight:700; margin-top:1.2rem; margin-bottom:.6rem;'>"
@@ -631,12 +641,12 @@ with tab1:
         )
 
         # All unique perfis as columns
-        all_perfis = sorted(df_vagas["Perfil"].dropna().unique())
+        all_perfis = sorted(df_vagas_f["Perfil"].dropna().unique())
         # All projects as rows
-        all_proj_vagas = sorted(df_vagas["Projeto"].dropna().unique())
+        all_proj_vagas = sorted(df_vagas_f["Projeto"].dropna().unique())
 
         # Build set of (projeto, perfil) with open vacancy
-        vagas_set = set(zip(df_vagas["Projeto"], df_vagas["Perfil"]))
+        vagas_set = set(zip(df_vagas_f["Projeto"], df_vagas_f["Perfil"]))
 
         # Header
         header_cells = "".join(
@@ -649,7 +659,7 @@ with tab1:
         body_rows = ""
         for proj in all_proj_vagas:
             proj_short = proj.split(" - ", 1)[1] if " - " in proj else proj
-            client_row = df_vagas[df_vagas["Projeto"] == proj]["Cliente"].iloc[0]
+            client_row = df_vagas_f[df_vagas_f["Projeto"] == proj]["Cliente"].iloc[0]
             mod_cells = ""
             for p in all_perfis:
                 if (proj, p) in vagas_set:

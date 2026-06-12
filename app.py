@@ -552,7 +552,7 @@ with tab1:
                                 ["\u2014 todos \u2014"] + sorted(dft["Consultor"].dropna().unique().tolist()),
                                 key="t1_sel")
         sel_proj = _d2.selectbox("Selecione um projeto para detalhar:",
-                                ["\u2014 todos \u2014"] + sorted(dft["Projeto"].dropna().unique().tolist()),
+                                ["\u2014 todos \u2014"] + sorted(dft["Projeto"].dropna().drop_duplicates().tolist()),
                                 key="t1_sel_proj")
         if sel_cons != "\u2014 todos \u2014" or sel_proj != "\u2014 todos \u2014":
             detail = dft.copy()
@@ -1291,6 +1291,37 @@ with tab4:
         st.markdown('<div class="section-title">Matriz de Especialidades</div>',
                     unsafe_allow_html=True)
 
+        # Pagination
+        _mx_page_size = 10
+        _mx_sorted    = dfr.sort_values(["Status","Consultor"]).reset_index(drop=True)
+        _mx_total     = len(_mx_sorted)
+        _mx_n_pages   = max(1, -(-_mx_total // _mx_page_size))
+
+        if "mx_page" not in st.session_state:
+            st.session_state["mx_page"] = 0
+        # Reset page if filters changed and page is out of range
+        if st.session_state["mx_page"] >= _mx_n_pages:
+            st.session_state["mx_page"] = 0
+
+        _mp1, _mp2, _mp3 = st.columns([1, 5, 1])
+        with _mp1:
+            if st.button("◀", key="mx_prev") and st.session_state["mx_page"] > 0:
+                st.session_state["mx_page"] -= 1
+                st.rerun()
+        with _mp3:
+            if st.button("▶", key="mx_next") and st.session_state["mx_page"] < _mx_n_pages - 1:
+                st.session_state["mx_page"] += 1
+                st.rerun()
+        with _mp2:
+            st.markdown(
+                f"<div style='text-align:center; padding:.3rem 0; font-size:.85rem; color:#94a3b8;'>"
+                f"Página {st.session_state['mx_page']+1} de {_mx_n_pages} · {_mx_total} consultores</div>",
+                unsafe_allow_html=True,
+            )
+
+        _mx_start = st.session_state["mx_page"] * _mx_page_size
+        dfr_page  = _mx_sorted.iloc[_mx_start:_mx_start + _mx_page_size]
+
         # Build matrix HTML
         header_cells = "".join(
             f"<th style='padding:5px 8px; font-size:.72rem; font-weight:600; color:#475569;"
@@ -1303,7 +1334,7 @@ with tab4:
         status_bg    = {"Alocado": "#fffbeb", "Disponível": "#f0fdf4"}
 
         body_rows = ""
-        for _, row in dfr.sort_values(["Status","Consultor"]).iterrows():
+        for _, row in dfr_page.iterrows():
             sc = status_color.get(row["Status"], "#6366f1")
             sb = status_bg.get(row["Status"], "#f8fafc")
             badge = (

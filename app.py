@@ -454,7 +454,9 @@ with tab1:
 
     # ── KPIs ─────────────────────────────────────────────────
     n_cons    = dft["Consultor"].nunique()
-    n_proj    = dft["Projeto"].nunique()
+    # Count projects including those with only open vacancies
+    _all_projs = set(dft["Projeto"].dropna().unique()) | set(df_vagas["Projeto"].dropna().unique())
+    n_proj    = len(_all_projs)
     n_cli     = dft["Cliente"].nunique()
     n_mod     = dft["Módulo"].nunique()
     # Sobrealocação: consultores em > 1 projeto

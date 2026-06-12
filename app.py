@@ -461,35 +461,49 @@ with tab1:
     treemap_df["Projetos"] = treemap_df.groupby("Consultor")["Projeto"].transform("nunique")
 
     if not treemap_df.empty:
-        # Color by number of projects per consultant: few=yellow, many=deep orange
         fig_tree = px.treemap(
             treemap_df,
             path=["Consultor", "ProjetoLabel"],
             values="Atividades",
             color="Projetos",
             color_continuous_scale=[
-                [0.0,  "#fff176"],   # 1 projeto  – amarelo claro
-                [0.35, "#ffb74d"],   # alguns     – laranja médio
-                [0.65, "#ef6c00"],   # vários     – laranja escuro
-                [1.0,  "#b71c1c"],   # muitos     – vermelho profundo
+                [0.0,  "#fef9c3"],   # 1 projeto  – amarelo muito suave
+                [0.35, "#fcd34d"],   # alguns     – amarelo dourado
+                [0.65, "#f97316"],   # vários     – laranja suave
+                [1.0,  "#dc2626"],   # muitos     – vermelho
             ],
             range_color=[1, _global_max_proj],
             custom_data=["Projetos"],
         )
         fig_tree.update_traces(
-            hovertemplate="<b>%{label}</b><br>Projetos: %{customdata[0]}<extra></extra>",
-            textfont_size=13,
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Projetos: %{customdata[0]}<br>"
+                "<extra></extra>"
+            ),
+            texttemplate="<b>%{label}</b>",
+            textfont=dict(size=13, family="Inter", color="white"),
+            textposition="middle center",
+            marker=dict(
+                line=dict(width=2, color="white"),
+                pad=dict(t=20, l=4, r=4, b=4),
+            ),
+            insidetextfont=dict(size=13, color="white"),
+            outsidetextfont=dict(size=11, color="#1e293b"),
         )
         fig_tree.update_layout(
             margin=dict(l=0, r=0, t=10, b=0),
-            height=420,
+            height=440,
+            paper_bgcolor="white",
             coloraxis_colorbar=dict(
                 title="Projetos",
                 tickmode="linear",
                 tick0=1,
                 dtick=1,
-                thickness=14,
-                len=0.6,
+                thickness=12,
+                len=0.5,
+                tickfont=dict(size=11),
+                titlefont=dict(size=11),
             ),
         )
         st.plotly_chart(fig_tree, use_container_width=True)

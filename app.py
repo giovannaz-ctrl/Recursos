@@ -355,32 +355,31 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
 
 
 # ─────────────────────────────────────────────
-# SIDEBAR – file upload
+# SIDEBAR – file upload ou GitHub
 # ─────────────────────────────────────────────
+GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/giovannaz-ctrl/Recursos/main/alocacao_controle_otimizado.xlsx"
+
 with st.sidebar:
     st.markdown("## 📂 Fonte de Dados")
-    uploaded = st.file_uploader("Carregue o arquivo Excel", type=["xlsx","xls"],
-                                 help="Planilha com abas: 1-Cockpit, 2-Agenda Workshop, 3-Atividades da Semana")
+    uploaded = st.file_uploader("Carregar novo arquivo Excel", type=["xlsx","xls"],
+                                 help="Deixe vazio para usar o arquivo padrão do repositório")
     st.markdown("---")
-
-if uploaded is None:
-    st.markdown("""
-    <div style="text-align:center; padding: 4rem 2rem; color: #64748b;">
-        <div style="font-size: 3rem;">📊</div>
-        <h2 style="color: #1e293b; margin: 1rem 0 .5rem;">Dashboard de Alocação</h2>
-        <p>Carregue o arquivo Excel no painel lateral para começar.</p>
-        <p style="font-size:.85rem; margin-top:1rem;">
-            Abas esperadas: <code>1-Cockpit</code> · <code>2-Agenda Workshop</code> · <code>3-Atividades da Semana</code>
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
 
 # ─────────────────────────────────────────────
 # LOAD
 # ─────────────────────────────────────────────
 with st.spinner("Processando dados…"):
-    df1, df2, df3, df_vagas, df_rec, df_golive = load_data(uploaded.read())
+    if uploaded is not None:
+        file_bytes = uploaded.read()
+    else:
+        import urllib.request
+        try:
+            with urllib.request.urlopen(GITHUB_EXCEL_URL) as resp:
+                file_bytes = resp.read()
+        except Exception as e:
+            st.error(f"Não foi possível carregar o arquivo do repositório: {e}")
+            st.stop()
+    df1, df2, df3, df_vagas, df_rec, df_golive = load_data(file_bytes)
 
 # Build project→color map (shared across tabs)
 all_projects = sorted(set(df1["Projeto"]) | set(df2["Projeto"]) | set(df3["Projeto"]))

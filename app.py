@@ -467,10 +467,10 @@ with tab1:
             values="Atividades",
             color="Projetos",
             color_continuous_scale=[
-                [0.0,  "#fff176"],
-                [0.35, "#ffb74d"],
-                [0.65, "#ef6c00"],
-                [1.0,  "#b71c1c"],
+                [0.0,  "#fef9c3"],
+                [0.35, "#fde68a"],
+                [0.65, "#fb923c"],
+                [1.0,  "#dc2626"],
             ],
             range_color=[1, _global_max_proj],
             custom_data=["Projetos"],
@@ -478,6 +478,9 @@ with tab1:
         fig_tree.update_traces(
             hovertemplate="<b>%{label}</b><br>Projetos: %{customdata[0]}<extra></extra>",
             textfont_size=13,
+            marker_line_width=2,
+            marker_line_color="white",
+            opacity=0.9,
         )
         fig_tree.update_layout(
             margin=dict(l=0, r=0, t=10, b=0),

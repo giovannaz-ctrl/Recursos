@@ -891,8 +891,8 @@ with tab3:
                 st.rerun()
         with _g2:
             st.markdown(
-                f"<div style='text-align:center; padding:.4rem 0; font-weight:600; "
-                f"color:#6366f1; font-size:1rem;'>📅 {week_labels3[sel_idx3]}</div>",
+                f"<div style='text-align:center; padding:.3rem 0; font-weight:400; "
+                f"color:#94a3b8; font-size:.85rem;'>{week_labels3[sel_idx3]}</div>",
                 unsafe_allow_html=True,
             )
 

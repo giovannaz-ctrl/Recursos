@@ -626,7 +626,7 @@ with tab1:
         header_cells = "".join(
             f"<th style='padding:5px 8px; font-size:.72rem; font-weight:600; color:#475569;"
             f"writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap;"
-            f"min-width:32px;'>{p}</th>"
+            f"min-width:26px;'>{p}</th>"
             for p in all_perfis
         )
 
@@ -637,13 +637,13 @@ with tab1:
             mod_cells = ""
             for p in all_perfis:
                 if (proj, p) in vagas_set:
-                    mod_cells += "<td style='text-align:center;padding:4px;'><span style='color:#ef4444;font-size:1rem;'>&#11044;</span></td>"
+                    mod_cells += "<td style='text-align:center;padding:3px;'><span style='color:#6366f1;font-size:.85rem;'>&#11044;</span></td>"
                 else:
-                    mod_cells += "<td style='text-align:center;padding:4px;'><span style='color:#e2e8f0;'>&#183;</span></td>"
+                    mod_cells += "<td style='text-align:center;padding:3px;'><span style='color:#e2e8f0;'>&#183;</span></td>"
             body_rows += (
                 f"<tr style='border-bottom:1px solid #f1f5f9; background:white;'>"
                 f"<td style='padding:6px 10px; font-size:.82rem; white-space:nowrap; color:#1e293b;"
-                f"font-weight:500; min-width:200px;'>{proj_short}"
+                f"font-weight:500; min-width:160px; font-size:.78rem;'>{proj_short}"
                 f"<div style='font-size:.7rem; color:#92400e; font-weight:400;'>{client_row}</div></td>"
                 f"{mod_cells}"
                 f"</tr>"
@@ -651,7 +651,7 @@ with tab1:
 
         st.markdown(
             f"<div style='overflow-x:auto; border:1.5px solid #fed7aa; border-radius:10px; background:#fff7ed;'>"
-            f"<table style='border-collapse:collapse; width:100%; font-size:.82rem; background:white; border-radius:8px;'>"
+            f"<table style='border-collapse:collapse; width:100%; font-size:.75rem; background:white; border-radius:8px;'>"
             f"<thead>"
             f"<tr style='background:#fff7ed; border-bottom:2px solid #fed7aa;'>"
             f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:200px;'>Projeto</th>"

@@ -677,8 +677,8 @@ with tab2:
         with nav2:
             label = week_labels[sel_week_idx]
             st.markdown(
-                f"<div style='text-align:center; padding:.4rem 0; font-weight:600; "
-                f"color:#6366f1; font-size:1rem;'>📅 {label}</div>",
+                f"<div style='text-align:center; padding:.3rem 0; font-weight:400; "
+                f"color:#94a3b8; font-size:.85rem;'>{label}</div>",
                 unsafe_allow_html=True,
             )
 

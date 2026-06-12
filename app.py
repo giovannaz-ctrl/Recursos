@@ -808,12 +808,7 @@ with tab3:
         }
         _all_cons_names = sorted(_act_names | _ws_only_names)
 
-        # ── Seção 1: Filtro + Navegação ──────────────────────────
-        st.markdown("""
-        <div style="background:white; border-radius:10px; padding:1rem 1.2rem;
-                    border:1px solid #e2e8f0; margin-bottom:1rem;">
-        """, unsafe_allow_html=True)
-
+        # ── Filtro ───────────────────────────────────────────────
         fa_cons = st.multiselect(
             "Filtrar por Consultor",
             _all_cons_names,
@@ -822,6 +817,9 @@ with tab3:
         )
         if fa_cons:
             dfa_all = dfa_all[dfa_all["Consultor"].isin(fa_cons)]
+
+        st.markdown("<hr style='margin:.6rem 0; border:none; border-top:1px solid #e2e8f0;'>",
+                    unsafe_allow_html=True)
 
         # Week dates
         _dates_act = dfa_all["Data"].dropna()
@@ -861,7 +859,24 @@ with tab3:
         if "t3_week_idx" not in st.session_state:
             st.session_state["t3_week_idx"] = _find_current_idx3()
 
-        st.markdown("<div style='margin-top:.5rem;'></div>", unsafe_allow_html=True)
+        sel_idx3    = max(0, min(st.session_state["t3_week_idx"], len(all_mondays3) - 1))
+        week_start3 = all_mondays3[sel_idx3]
+        week_end3   = week_start3 + timedelta(days=6)
+
+        dfa = dfa_all[dfa_all["Data"].between(week_start3, week_end3)].copy()
+
+        # ── KPIs ─────────────────────────────────────────────────
+        total_h = dfa["Horas"].sum()
+        st.markdown(f"""
+        <div class="kpi-grid">
+            {kpi_html(f"{total_h:.0f}h", "Total de Horas na Semana")}
+            {kpi_html(dfa["Consultor"].nunique(), "Consultores", "green")}
+            {kpi_html(dfa["Projeto"].nunique(),   "Projetos",    "amber")}
+            {kpi_html(dfa["Atividade"].nunique(), "Atividades",  "rose")}
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Navegação ─────────────────────────────────────────────
         _g1, _g2, _g3, _g4 = st.columns([1, 5, 1, 1])
         with _g1:
             if st.button("◀ Anterior", key="t3_prev"):
@@ -877,11 +892,6 @@ with tab3:
             if st.button("Semana Atual", key="t3_today"):
                 st.session_state["t3_week_idx"] = _find_current_idx3()
                 st.rerun()
-
-        sel_idx3    = max(0, min(st.session_state["t3_week_idx"], len(all_mondays3) - 1))
-        week_start3 = all_mondays3[sel_idx3]
-        week_end3   = week_start3 + timedelta(days=6)
-
         with _g2:
             st.markdown(
                 f"<div style='text-align:center; padding:.4rem 0; font-weight:600; "
@@ -889,20 +899,8 @@ with tab3:
                 unsafe_allow_html=True,
             )
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ── Seção 2: KPIs + Gantt ─────────────────────────────────
-        dfa = dfa_all[dfa_all["Data"].between(week_start3, week_end3)].copy()
-
-        total_h = dfa["Horas"].sum()
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html(f"{total_h:.0f}h", "Total de Horas na Semana")}
-            {kpi_html(dfa["Consultor"].nunique(), "Consultores", "green")}
-            {kpi_html(dfa["Projeto"].nunique(),   "Projetos",    "amber")}
-            {kpi_html(dfa["Atividade"].nunique(), "Atividades",  "rose")}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<hr style='margin:.6rem 0; border:none; border-top:1px solid #e2e8f0;'>",
+                    unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Gantt da Semana por Consultor</div>', unsafe_allow_html=True)
 

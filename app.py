@@ -403,6 +403,16 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # ───────────────────────────────────────────────────────────────
 with tab1:
     st.markdown("### Dashboard de Alocação de Consultores")
+    st.markdown(
+        "<div style='font-size:.85rem; color:#64748b; margin-bottom:1rem; line-height:1.6;'>"
+        "Visão consolidada dos consultores alocados nos projetos ativos, cobrindo as fases de "
+        "<b style='color:#475569;'>Realização</b>, <b style='color:#475569;'>Implantação</b> e "
+        "<b style='color:#475569;'>Go Live</b>. "
+        "Utilize os filtros para explorar por consultor, projeto, cliente ou módulo. "
+        "O Treemap exibe a distribuição por consultor — quanto mais escuro, maior o número de projetos simultâneos."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     # ── Filters ─────────────────────────────────────────────────
     with st.expander("🔍 Filtros", expanded=False):

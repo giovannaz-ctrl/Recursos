@@ -514,13 +514,6 @@ with tab1:
     if not dft_junior.empty:
         st.markdown('<div class="section-title">👶 Consultores Júnior — Apoio nos Projetos</div>',
                     unsafe_allow_html=True)
-        st.markdown(
-            "<div style='font-size:.82rem; color:#64748b; margin-bottom:.6rem;'>"
-            "Atuam como apoio e estão em processo de desenvolvimento. "
-            "Não considerar para avaliação de sobrecarga ou substituição."
-            "</div>",
-            unsafe_allow_html=True,
-        )
         jr_df = (
             dft_junior.drop_duplicates(subset=["Consultor","Projeto"])
             .groupby("Consultor")["Projeto"]
@@ -608,48 +601,68 @@ with tab1:
                        file_name="alocacao_consultores.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # ── Alocações Pendentes ───────────────────────────────────────
+    # ── Alocações Pendentes — matriz estilo recursos ─────────────
     if not df_vagas.empty:
         n_vagas      = len(df_vagas)
         n_proj_vagas = df_vagas["Projeto"].nunique()
 
-        # Build compact cards grouped by project
-        cards_html = ""
-        for proj, grp in df_vagas.groupby("Projeto"):
-            client = grp["Cliente"].iloc[0]
-            perfis = grp["Perfil"].tolist()
-            tags = " ".join(
-                "<span style='background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;"
-                "border-radius:4px;padding:2px 10px;font-size:.75rem;font-weight:500;"
-                "margin-right:4px;display:inline-block;'>" + p + "</span>"
-                for p in perfis
-            )
+        st.markdown(
+            f"<div style='font-size:.82rem; color:#c2410c; font-weight:700; margin-top:1.2rem; margin-bottom:.6rem;'>"
+            f"⚠️ {n_vagas} alocaç{'ões' if n_vagas > 1 else 'ão'} pendente{'s' if n_vagas > 1 else ''}"
+            f" &nbsp;·&nbsp; {n_proj_vagas} projeto{'s' if n_proj_vagas > 1 else ''} afetado{'s' if n_proj_vagas > 1 else ''}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # All unique perfis as columns
+        all_perfis = sorted(df_vagas["Perfil"].dropna().unique())
+        # All projects as rows
+        all_proj_vagas = sorted(df_vagas["Projeto"].dropna().unique())
+
+        # Build set of (projeto, perfil) with open vacancy
+        vagas_set = set(zip(df_vagas["Projeto"], df_vagas["Perfil"]))
+
+        # Header
+        header_cells = "".join(
+            f"<th style='padding:5px 8px; font-size:.72rem; font-weight:600; color:#475569;"
+            f"writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap;"
+            f"min-width:32px;'>{p}</th>"
+            for p in all_perfis
+        )
+
+        body_rows = ""
+        for proj in all_proj_vagas:
             proj_short = proj.split(" - ", 1)[1] if " - " in proj else proj
-            cards_html += (
-                "<div style='display:flex;align-items:flex-start;gap:1rem;"
-                "padding:.6rem 0;border-bottom:1px solid #fed7aa;'>"
-                "<div style='min-width:220px;max-width:260px;'>"
-                "<div style='font-size:.83rem;font-weight:600;color:#1e293b;'>" + proj_short + "</div>"
-                "<div style='font-size:.72rem;color:#92400e;margin-top:1px;'>" + client + "</div>"
-                "</div>"
-                "<div style='flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:4px;'>" + tags + "</div>"
-                "</div>"
+            client_row = df_vagas[df_vagas["Projeto"] == proj]["Cliente"].iloc[0]
+            mod_cells = ""
+            for p in all_perfis:
+                if (proj, p) in vagas_set:
+                    mod_cells += "<td style='text-align:center;padding:4px;'><span style='color:#ef4444;font-size:1rem;'>&#11044;</span></td>"
+                else:
+                    mod_cells += "<td style='text-align:center;padding:4px;'><span style='color:#e2e8f0;'>&#183;</span></td>"
+            body_rows += (
+                f"<tr style='border-bottom:1px solid #f1f5f9; background:white;'>"
+                f"<td style='padding:6px 10px; font-size:.82rem; white-space:nowrap; color:#1e293b;"
+                f"font-weight:500; min-width:200px;'>{proj_short}"
+                f"<div style='font-size:.7rem; color:#92400e; font-weight:400;'>{client_row}</div></td>"
+                f"{mod_cells}"
+                f"</tr>"
             )
 
-        st.markdown(f"""
-        <div style="background:#fff7ed; border:1.5px solid #fb923c; border-radius:10px;
-                    padding:1rem 1.2rem; margin-top:1.2rem;">
-          <div style="display:flex; align-items:center; gap:.6rem; margin-bottom:.8rem;">
-            <span style="font-size:1.1rem;">⚠️</span>
-            <span style="font-weight:700; color:#c2410c; font-size:.9rem;">
-              {n_vagas} alocaç{'ões' if n_vagas > 1 else 'ão'} pendente{'s' if n_vagas > 1 else ''}
-              &nbsp;·&nbsp;
-              {n_proj_vagas} projeto{'s' if n_proj_vagas > 1 else ''} afetado{'s' if n_proj_vagas > 1 else ''}
-            </span>
-          </div>
-          {cards_html}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='overflow-x:auto; border:1.5px solid #fed7aa; border-radius:10px; background:#fff7ed;'>"
+            f"<table style='border-collapse:collapse; width:100%; font-size:.82rem; background:white; border-radius:8px;'>"
+            f"<thead>"
+            f"<tr style='background:#fff7ed; border-bottom:2px solid #fed7aa;'>"
+            f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:200px;'>Projeto</th>"
+            f"{header_cells}"
+            f"</tr>"
+            f"</thead>"
+            f"<tbody>{body_rows}</tbody>"
+            f"</table>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
 
 # ───────────────────────────────────────────────────────────────
@@ -1303,16 +1316,16 @@ with tab4:
         if st.session_state["mx_page"] >= _mx_n_pages:
             st.session_state["mx_page"] = 0
 
-        _mp1, _mp2, _mp3 = st.columns([1, 5, 1])
-        with _mp1:
+        _mp_left, _mp_mid, _mp_right = st.columns([1, 8, 1])
+        with _mp_left:
             if st.button("◀", key="mx_prev") and st.session_state["mx_page"] > 0:
                 st.session_state["mx_page"] -= 1
                 st.rerun()
-        with _mp3:
+        with _mp_right:
             if st.button("▶", key="mx_next") and st.session_state["mx_page"] < _mx_n_pages - 1:
                 st.session_state["mx_page"] += 1
                 st.rerun()
-        with _mp2:
+        with _mp_mid:
             st.markdown(
                 f"<div style='text-align:center; padding:.3rem 0; font-size:.85rem; color:#94a3b8;'>"
                 f"Página {st.session_state['mx_page']+1} de {_mx_n_pages} · {_mx_total} consultores</div>",

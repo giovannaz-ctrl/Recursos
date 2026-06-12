@@ -490,7 +490,8 @@ with tab1:
         )
         fig_tree.update_traces(
             hovertemplate="<b>%{label}</b><br>Projetos: %{customdata[0]}<extra></extra>",
-            textfont_size=13,
+            textfont_size=11,
+            textfont_family="Inter",
             marker_line_width=2,
             marker_line_color="white",
             opacity=0.9,

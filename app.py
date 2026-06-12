@@ -1494,26 +1494,12 @@ with tab5:
             _hiring_cols = st.columns(min(3, len(df_hiring)))
             for _hi, _hrow in df_hiring.iterrows():
                 _perfil = _hrow["Perfil"]
-                # Find internal consultants with similar module
-                _mod_key = _perfil.replace("Consultor","").strip().split()[0] if _perfil else ""
-                _similares = df_rec[
-                    df_rec["Modulos"].str.contains(_mod_key, case=False, na=False)
-                ]["Consultor"].tolist() if _mod_key else []
-
-                _sim_html = "".join(
-                    f"<div style='font-size:.75rem; color:#475569; padding:1px 0;'>· {n.split()[0]} {n.split()[-1]}</div>"
-                    for n in _similares[:4]
-                ) if _similares else "<div style='font-size:.75rem; color:#94a3b8;'>Sem referência interna</div>"
-
                 with _hiring_cols[_hi % 3]:
                     st.markdown(
                         f"<div style='background:white; border:1.5px solid #f97316; border-radius:10px; "
                         f"padding:.8rem 1rem; margin-bottom:.8rem;'>"
-                        f"<div style='font-weight:700; color:#f97316; font-size:.88rem; margin-bottom:.4rem;'>"
+                        f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>"
                         f"🔎 {_perfil}</div>"
-                        f"<div style='font-size:.72rem; color:#64748b; font-weight:600; "
-                        f"text-transform:uppercase; letter-spacing:.04em; margin-bottom:.2rem;'>Perfil similar interno</div>"
-                        f"{_sim_html}"
                         f"</div>",
                         unsafe_allow_html=True,
                     )

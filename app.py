@@ -1486,92 +1486,104 @@ with tab5:
                     unsafe_allow_html=True)
         st.markdown(
             "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Baseado na complexidade dos projetos: <b>Alta</b> = dedicação exclusiva · "
-            "<b>Média</b> = até 2 projetos · <b>Baixa</b> = até 3 projetos."
-            "</div>",
-            unsafe_allow_html=True,
+            "Modelo considera: <b>complexidade</b> (Alta=exclusivo · Média=2 proj · Baixa=3 proj), "
+            "<b>vagas em aberto</b>, <b>consultores no limite</b> e <b>sobreposição de Go Lives</b>."
+            "</div>", unsafe_allow_html=True,
         )
 
         import math as _math
         _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
         _MAX   = 3.0
+        _ALIAS = {"AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI","Custeio":"CO","SAC":"SD","Planning":"SD"}
 
-        # Consultant slots consumed
-        _cons_slots = {}
-        if "Complexidade" in df1.columns:
-            for _, _r in df1[df1["Papel"]=="Principal"].drop_duplicates(subset=["Consultor","Projeto"]).iterrows():
-                _s = _SLOTS.get(_r.get("Complexidade","Média"), 1.5)
-                _cons_slots[_r["Consultor"]] = _cons_slots.get(_r["Consultor"], 0) + _s
+        def _mk(p):
+            k = p.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if p else ""
+            return _ALIAS.get(k, k)
 
-        # Module free capacity
-        _mod_cap = {}
-        _dfr_sr = df_rec[df_rec["Senioridade"].str.lower() != "junior"] if "Senioridade" in df_rec.columns else df_rec
-        for _, _rr in _dfr_sr.iterrows():
-            _free = max(0, _MAX - _cons_slots.get(_rr["Consultor"], 0))
+        # Slots consumed per consultant
+        _cslots = {}
+        for _, _r in df1[df1["Papel"]=="Principal"].drop_duplicates(subset=["Consultor","Projeto"]).iterrows():
+            _c = _r["Consultor"]
+            _cslots[_c] = _cslots.get(_c, 0) + _SLOTS.get(_r.get("Complexidade","Média"), 1.5)
+
+        # Go Live conflicts per consultant
+        _gl_months = {}
+        _gl_src = df_golive[df_golive["Papel"]=="Principal"] if "Papel" in df_golive.columns else df_golive
+        for _, _r in _gl_src.iterrows():
+            _c, _gl = _r.get("Consultor",""), _r.get("GoLive")
+            if _c and pd.notna(_gl):
+                _m = pd.Timestamp(_gl).strftime("%Y-%m")
+                if _c not in _gl_months: _gl_months[_c] = {}
+                _gl_months[_c][_m] = _gl_months[_c].get(_m, 0) + 1
+        _gl_cons = {c for c, ms in _gl_months.items() if any(v > 1 for v in ms.values())}
+
+        # Module capacity + limit count
+        _mod_cap, _mod_lim = {}, {}
+        _sr_rec = df_rec[df_rec["Senioridade"].str.lower() != "junior"] if "Senioridade" in df_rec.columns else df_rec
+        for _, _rr in _sr_rec.iterrows():
+            _cn   = _rr["Consultor"]
+            _free = max(0, _MAX - _cslots.get(_cn, 0))
             for _m in (_rr.get("Especialidades") or []):
                 _mod_cap[_m] = _mod_cap.get(_m, 0) + _free
+                if _cslots.get(_cn, 0) >= _MAX:
+                    _mod_lim[_m] = _mod_lim.get(_m, 0) + 1
 
-        # Module aliases — map sub-modules to parent
-        _MOD_ALIAS = {
-            "AP": "FI", "AR": "FI", "GL": "FI", "AA": "FI", "PL": "FI",
-            "Bancos": "FI", "Custeio": "CO",
-            "SAC": "SD", "Planning": "SD",
-        }
-
-        # Module demand from open vacancies
+        # Module demand from vacancies
         _mod_dem = {}
         for _, _r in df_vagas.iterrows():
             _perf = _r.get("Perfil","")
             _proj = _r.get("Projeto","")
-            _comp_rows = df1[df1["Projeto"] == _proj]["Complexidade"] if "Complexidade" in df1.columns else pd.Series(["Média"])
-            _comp  = _comp_rows.iloc[0] if not _comp_rows.empty else "Média"
-            _slots = _SLOTS.get(_comp, 1.5)
-            _mod_key = _perf.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if _perf else ""
-            _mod_key = _MOD_ALIAS.get(_mod_key, _mod_key)
-            if _mod_key:
-                _mod_dem[_mod_key] = _mod_dem.get(_mod_key, 0) + _slots
+            _cr   = df1[df1["Projeto"]==_proj]["Complexidade"] if "Complexidade" in df1.columns else pd.Series(["Média"])
+            _comp = _cr.iloc[0] if not _cr.empty else "Média"
+            _key  = _mk(_perf)
+            if _key: _mod_dem[_key] = _mod_dem.get(_key, 0) + _SLOTS.get(_comp, 1.5)
 
-        # Build results
+        # Build table
         _cap_rows = []
-        for _mod in sorted(set(_mod_dem.keys()) | set(_mod_cap.keys())):
+        for _mod in sorted(set(_mod_dem) | {m for m in _mod_lim if _mod_lim[m] > 0}):
             _dem  = _mod_dem.get(_mod, 0)
             _cap  = _mod_cap.get(_mod, 0)
+            _lim  = _mod_lim.get(_mod, 0)
             _gap  = max(0, _dem - _cap)
             _hire = _math.ceil(_gap / _MAX) if _gap > 0 else 0
-            if _dem > 0 or _hire > 0:
-                _cap_rows.append({
-                    "Módulo": _mod,
-                    "Demanda": round(_dem, 1),
-                    "Capacidade livre": round(_cap, 1),
-                    "Gap": round(_gap, 1),
-                    "Contratar": int(_hire),
-                    "Status": "⚠️ Gap" if _hire > 0 else "✅ Coberto",
-                })
+            _gl   = any(_mod in (_rr.get("Especialidades") or []) and _rr["Consultor"] in _gl_cons
+                        for _, _rr in _sr_rec.iterrows())
+            _flags = []
+            if _hire > 0: _flags.append("⚠️ Gap")
+            if _lim > 0:  _flags.append(f"🔴 {_lim} no limite")
+            if _gl:       _flags.append("📅 Go Live risk")
+            if not _flags: _flags.append("✅ Ok")
+            if _dem > 0 or _lim > 0 or _gl:
+                _cap_rows.append({"Módulo": _mod, "Demanda": round(_dem,1),
+                    "Cap. livre": round(_cap,1), "No limite": int(_lim),
+                    "Contratar": int(_hire), "Situação": " · ".join(_flags)})
 
-        _cap_df = pd.DataFrame(_cap_rows).sort_values("Contratar", ascending=False) if _cap_rows else pd.DataFrame()
+        _cap_df    = pd.DataFrame(_cap_rows).sort_values(["Contratar","No limite"], ascending=False) if _cap_rows else pd.DataFrame()
         _total_hire = int(_cap_df["Contratar"].sum()) if not _cap_df.empty else 0
-        _n_gap = int((_cap_df["Contratar"] > 0).sum()) if not _cap_df.empty else 0
+        _n_gap      = int((_cap_df["Contratar"] > 0).sum()) if not _cap_df.empty else 0
+        _n_lim      = int((_cap_df["No limite"] > 0).sum()) if not _cap_df.empty else 0
 
         st.markdown(f"""
         <div class="kpi-grid">
-            {kpi_html(_total_hire, "Contratações necessárias", "rose")}
-            {kpi_html(_n_gap,      "Módulos com gap",          "amber")}
-            {kpi_html(len(df_hiring) if not df_hiring.empty else 0, "Vagas já abertas", "green")}
+            {kpi_html(_total_hire, "Contratar",          "rose")}
+            {kpi_html(_n_gap,      "Módulos com gap",    "amber")}
+            {kpi_html(_n_lim,      "Módulos no limite",  "rose")}
+            {kpi_html(len(df_hiring) if not df_hiring.empty else 0, "Vagas abertas", "green")}
         </div>
         """, unsafe_allow_html=True)
 
         if not _cap_df.empty:
             st.dataframe(_cap_df, use_container_width=True, hide_index=True,
                 column_config={
-                    "Módulo":           st.column_config.TextColumn("Módulo",            width="small"),
-                    "Demanda":          st.column_config.NumberColumn("Demanda (slots)",  width="small", format="%.1f"),
-                    "Capacidade livre": st.column_config.NumberColumn("Cap. livre",       width="small", format="%.1f"),
-                    "Gap":              st.column_config.NumberColumn("Gap",              width="small", format="%.1f"),
-                    "Contratar":        st.column_config.NumberColumn("Contratar",        width="small"),
-                    "Status":           st.column_config.TextColumn("Status",             width="small"),
+                    "Módulo":     st.column_config.TextColumn("Módulo",      width="small"),
+                    "Demanda":    st.column_config.NumberColumn("Demanda",   width="small", format="%.1f"),
+                    "Cap. livre": st.column_config.NumberColumn("Cap. livre",width="small", format="%.1f"),
+                    "No limite":  st.column_config.NumberColumn("No limite", width="small"),
+                    "Contratar":  st.column_config.NumberColumn("Contratar", width="small"),
+                    "Situação":   st.column_config.TextColumn("Situação",    width="large"),
                 })
 
-        # Vagas em aberto
+        # Vagas abertas
         if not df_hiring.empty:
             st.markdown('<div class="section-title">🔎 Vagas em Processo de Contratação</div>',
                         unsafe_allow_html=True)
@@ -1582,8 +1594,7 @@ with tab5:
                         f"<div style='background:white; border:1.5px solid #f97316; border-radius:10px; "
                         f"padding:.8rem 1rem; margin-bottom:.8rem;'>"
                         f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>🔎 {_hrow['Perfil']}</div>"
-                        f"</div>",
-                        unsafe_allow_html=True,
+                        f"</div>", unsafe_allow_html=True,
                     )
 
 

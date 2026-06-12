@@ -494,7 +494,6 @@ with tab1:
         fig_tree.update_layout(
             margin=dict(l=0, r=0, t=10, b=0),
             height=440,
-            paper_bgcolor="white",
             coloraxis_colorbar=dict(
                 title="Projetos",
                 tickmode="linear",

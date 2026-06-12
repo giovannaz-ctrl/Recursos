@@ -898,6 +898,29 @@ with tab3:
         """, unsafe_allow_html=True)
 
         # ── Gantt semanal ─────────────────────────────────────────
+        # ── Navigation buttons above Gantt ───────────────────────
+        _g1, _g2, _g3, _g4 = st.columns([1, 5, 1, 1])
+        with _g1:
+            if st.button("◀ Anterior", key="t3_prev"):
+                if st.session_state["t3_week_idx"] > 0:
+                    st.session_state["t3_week_idx"] -= 1
+                    st.rerun()
+        with _g3:
+            if st.button("Próxima ▶", key="t3_next"):
+                if st.session_state["t3_week_idx"] < len(all_mondays3) - 1:
+                    st.session_state["t3_week_idx"] += 1
+                    st.rerun()
+        with _g4:
+            if st.button("Semana Atual", key="t3_today"):
+                st.session_state["t3_week_idx"] = _find_current_idx3()
+                st.rerun()
+        with _g2:
+            st.markdown(
+                f"<div style='text-align:center; padding:.4rem 0; font-weight:600; "
+                f"color:#6366f1; font-size:1rem;'>📅 {week_labels3[sel_idx3]}</div>",
+                unsafe_allow_html=True,
+            )
+
         st.markdown('<div class="section-title">Gantt da Semana por Consultor</div>', unsafe_allow_html=True)
 
         # Check if there are workshops this week even if no activities

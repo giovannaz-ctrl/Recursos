@@ -653,20 +653,20 @@ with tab1:
             mod_cells = ""
             for p in all_perfis:
                 if (proj, p) in vagas_set:
-                    mod_cells += "<td style='text-align:center;padding:3px;'><span style='color:#6366f1;font-size:.85rem;'>&#11044;</span></td>"
+                    mod_cells += "<td style='text-align:center;padding:2px;'><span style='color:#f97316;font-size:.72rem;'>&#11044;</span></td>"
                 else:
-                    mod_cells += "<td style='text-align:center;padding:3px;'><span style='color:#e2e8f0;'>&#183;</span></td>"
+                    mod_cells += "<td style='text-align:center;padding:2px;'><span style='color:#e2e8f0;font-size:.72rem;'>&#183;</span></td>"
             body_rows += (
                 f"<tr style='border-bottom:1px solid #f1f5f9; background:white;'>"
                 f"<td style='padding:6px 10px; font-size:.82rem; white-space:nowrap; color:#1e293b;"
-                f"font-weight:500; min-width:120px; font-size:.78rem;'>{client_row}</td>"
+                f"font-weight:500; min-width:100px; font-size:.75rem; padding:4px 8px;'>{client_row}</td>"
                 f"{mod_cells}"
                 f"</tr>"
             )
 
         st.markdown(
             f"<div style='overflow-x:auto; border:1.5px solid #fed7aa; border-radius:10px; background:#fff7ed;'>"
-            f"<table style='border-collapse:collapse; width:100%; font-size:.75rem; background:white; border-radius:8px;'>"
+            f"<table style='border-collapse:collapse; width:100%; font-size:.72rem; background:white; border-radius:8px;'>"
             f"<thead>"
             f"<tr style='background:#fff7ed; border-bottom:2px solid #fed7aa;'>"
             f"<th style='padding:8px 10px; text-align:left; color:#92400e; font-weight:600; min-width:120px;'>Cliente</th>"

@@ -481,15 +481,11 @@ with tab1:
                 "Projetos: %{customdata[0]}<br>"
                 "<extra></extra>"
             ),
-            texttemplate="<b>%{label}</b>",
-            textfont=dict(size=13, family="Inter", color="white"),
-            textposition="middle center",
+            textfont_size=13,
             marker=dict(
                 line=dict(width=2, color="white"),
                 pad=dict(t=20, l=4, r=4, b=4),
             ),
-            insidetextfont=dict(size=13, color="white"),
-            outsidetextfont=dict(size=11, color="#1e293b"),
         )
         fig_tree.update_layout(
             margin=dict(l=0, r=0, t=10, b=0),

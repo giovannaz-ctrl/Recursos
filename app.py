@@ -561,24 +561,23 @@ with tab1:
         for proj, grp in df_vagas.groupby("Projeto"):
             client = grp["Cliente"].iloc[0]
             perfis = grp["Perfil"].tolist()
-            tags = "".join(
-                f"<span style='background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; "
-                f"border-radius:4px; padding:2px 10px; font-size:.75rem; font-weight:500; "
-                f"margin-right:4px; margin-bottom:4px; display:inline-block;'>{p}</span>"
+            tags = " ".join(
+                "<span style='background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;"
+                "border-radius:4px;padding:2px 10px;font-size:.75rem;font-weight:500;"
+                "margin-right:4px;display:inline-block;'>" + p + "</span>"
                 for p in perfis
             )
             proj_short = proj.split(" - ", 1)[1] if " - " in proj else proj
-            cards_html += f"""
-            <div style="display:flex; align-items:flex-start; gap:1rem;
-                        padding:.6rem 0; border-bottom:1px solid #fed7aa;">
-              <div style="min-width:220px; max-width:260px;">
-                <div style="font-size:.83rem; font-weight:600; color:#1e293b;">{proj_short}</div>
-                <div style="font-size:.72rem; color:#92400e; margin-top:1px;">{client}</div>
-              </div>
-              <div style="flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
-                {tags}
-              </div>
-            </div>"""
+            cards_html += (
+                "<div style='display:flex;align-items:flex-start;gap:1rem;"
+                "padding:.6rem 0;border-bottom:1px solid #fed7aa;'>"
+                "<div style='min-width:220px;max-width:260px;'>"
+                "<div style='font-size:.83rem;font-weight:600;color:#1e293b;'>" + proj_short + "</div>"
+                "<div style='font-size:.72rem;color:#92400e;margin-top:1px;'>" + client + "</div>"
+                "</div>"
+                "<div style='flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:4px;'>" + tags + "</div>"
+                "</div>"
+            )
 
         st.markdown(f"""
         <div style="background:#fff7ed; border:1.5px solid #fb923c; border-radius:10px;

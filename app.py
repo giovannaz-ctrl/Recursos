@@ -1511,6 +1511,13 @@ with tab5:
             for _m in (_rr.get("Especialidades") or []):
                 _mod_cap[_m] = _mod_cap.get(_m, 0) + _free
 
+        # Module aliases — map sub-modules to parent
+        _MOD_ALIAS = {
+            "AP": "FI", "AR": "FI", "GL": "FI", "AA": "FI", "PL": "FI",
+            "Bancos": "FI", "Custeio": "CO",
+            "SAC": "SD", "Planning": "SD",
+        }
+
         # Module demand from open vacancies
         _mod_dem = {}
         for _, _r in df_vagas.iterrows():
@@ -1520,6 +1527,7 @@ with tab5:
             _comp  = _comp_rows.iloc[0] if not _comp_rows.empty else "Média"
             _slots = _SLOTS.get(_comp, 1.5)
             _mod_key = _perf.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if _perf else ""
+            _mod_key = _MOD_ALIAS.get(_mod_key, _mod_key)
             if _mod_key:
                 _mod_dem[_mod_key] = _mod_dem.get(_mod_key, 0) + _slots
 

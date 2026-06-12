@@ -32,7 +32,7 @@ st.markdown("""
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
   /* Sidebar */
-  section[data-testid="stSidebar"] { background: #0f172a; }
+  section[data-testid="stSidebar"] { background: linear-gradient(180deg, #1a0a00 0%, #0f172a 30%); }
   section[data-testid="stSidebar"] * { color: #cbd5e1 !important; }
   section[data-testid="stSidebar"] .stSelectbox label,
   section[data-testid="stSidebar"] .stMultiSelect label { color: #94a3b8 !important; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .05em; }
@@ -46,7 +46,7 @@ st.markdown("""
     background: white;
     border-radius: 12px;
     padding: 1.2rem 1.4rem;
-    border-left: 4px solid #6366f1;
+    border-left: 4px solid #f97316;
     box-shadow: 0 1px 3px rgba(0,0,0,.06);
   }
   .kpi-card.green  { border-left-color: #10b981; }
@@ -56,10 +56,11 @@ st.markdown("""
   .kpi-label { font-size: 0.75rem; color: #64748b; margin-top: .25rem; text-transform: uppercase; letter-spacing: .05em; }
 
   /* Section titles */
-  .section-title { font-size: 1rem; font-weight: 600; color: #1e293b; margin: 1.5rem 0 .75rem; border-bottom: 1px solid #e2e8f0; padding-bottom: .4rem; }
+  .section-title { font-size: 1rem; font-weight: 600; color: #1e293b; margin: 1.5rem 0 .75rem; border-bottom: 2px solid #f97316; padding-bottom: .4rem; }
 
   /* Nav tabs override */
   div[data-testid="stTabs"] button { font-weight: 500; }
+  div[data-testid="stTabs"] button[aria-selected="true"] { color: #f97316 !important; border-bottom-color: #f97316 !important; }
 
   /* Calendar cells */
   .cal-event {
@@ -775,7 +776,7 @@ with tab3:
                 bg = "white"
                 st.markdown(f"""
                 <div style="background:{bg}; border-radius:8px; padding:8px;
-                     border: 1px solid #6366f1;
+                     border: 1px solid #f97316;
                      min-height:50px;">
                   <div style="font-weight:600; color:#6366f1;
                        font-size:.8rem; margin-bottom:6px;">
@@ -1371,7 +1372,7 @@ with tab5:
             )
             mod_cells = "".join(
                 f"<td style='text-align:center; padding:4px;'>"
-                f"{'<span style="color:#6366f1; font-size:1rem;">●</span>' if m in row['Especialidades'] else '<span style="color:#e2e8f0;">·</span>'}"
+                f"{'<span style="color:#f97316; font-size:1rem;">●</span>' if m in row['Especialidades'] else '<span style="color:#e2e8f0;">·</span>'}"
                 f"</td>"
                 for m in all_modulos
             )
@@ -1664,7 +1665,7 @@ with tab2:
                     st.rerun()
             with _pag2:
                 st.markdown(
-                    f"<div style='text-align:center; padding:.2rem 0; font-size:.85rem; color:#6366f1; font-weight:600;'>"
+                    f"<div style='text-align:center; padding:.2rem 0; font-size:.85rem; color:#f97316; font-weight:600;'>"
                     f"Página {_cur_page + 1} de {_n_pages} &nbsp;·&nbsp; {len(_cons_order_all)} consultores</div>",
                     unsafe_allow_html=True,
                 )

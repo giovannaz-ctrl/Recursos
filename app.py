@@ -1586,14 +1586,76 @@ with tab5:
         for _tab, _df, _label in [(_tab_c, _df_c, "Conservador"), (_tab_a, _df_a, "Arrojado")]:
             with _tab:
                 if not _df.empty:
-                    st.dataframe(_df, use_container_width=True, hide_index=True,
-                        column_config={
-                            "Módulo":           st.column_config.TextColumn("Módulo",            width="small"),
-                            "Sobrecarregados":  st.column_config.TextColumn("Sobrecarregados",   width="large"),
-                            "Redistribuir para":st.column_config.TextColumn("Redistribuir para", width="large"),
-                            "Contratar":        st.column_config.NumberColumn("Contratar",        width="small"),
-                            "Situação":         st.column_config.TextColumn("Situação",           width="medium"),
-                        })
+                    for _, _row in _df.iterrows():
+                        _sit = _row["Situação"]
+                        _color = "#ef4444" if "Contratar" in _sit else "#f97316"
+                        _bg    = "#fef2f2" if "Contratar" in _sit else "#fff7ed"
+                        _border= "#ef4444" if "Contratar" in _sit else "#f97316"
+
+                        # Parse overloaded into visual slots
+                        def _slot_bar(slots, max_slots=MAX):
+                            filled = min(int(round(slots)), 5)
+                            pct    = min(slots / max_slots, 1.0)
+                            if pct >= 1.0:   bar_color = "#ef4444"
+                            elif pct >= 0.7: bar_color = "#f97316"
+                            else:            bar_color = "#10b981"
+                            blocks = "█" * filled + "░" * max(0, 3 - filled)
+                            return f"<span style='color:{bar_color}; font-size:.9rem; letter-spacing:2px;'>{blocks}</span> <span style='font-size:.75rem; color:#64748b;'>{slots:.1f}/{max_slots:.0f}</span>"
+
+                        # Build overloaded html
+                        _over_parts = []
+                        for _op in _row["Sobrecarregados"].split(", "):
+                            try:
+                                _name = _op.rsplit("(", 1)[0].strip()
+                                _sl   = float(_op.rsplit("(", 1)[1].replace("sl)",""))
+                                _over_parts.append(
+                                    f"<div style='display:flex;align-items:center;gap:.5rem;padding:2px 0;'>"
+                                    f"<span style='font-size:.8rem;color:#1e293b;min-width:140px;'>{_name}</span>"
+                                    f"{_slot_bar(_sl)}"
+                                    f"</div>"
+                                )
+                            except: pass
+
+                        # Build redist html
+                        _redist_parts = []
+                        for _rp in _row["Redistribuir para"].split("; "):
+                            if _rp == "—": continue
+                            try:
+                                _rname = _rp.split("(")[0].strip()
+                                _rrest = "(" + _rp.split("(")[1] if "(" in _rp else ""
+                                _gl_flag = "⚠️" if "⚠️GL" in _rp else "✅"
+                                _redist_parts.append(
+                                    f"<div style='font-size:.78rem;color:#166534;padding:1px 0;'>"
+                                    f"{_gl_flag} {_rname} <span style='color:#94a3b8;'>{_rrest}</span></div>"
+                                )
+                            except: pass
+
+                        _over_html   = "".join(_over_parts) or "—"
+                        _redist_html = "".join(_redist_parts) or                             f"<div style='font-size:.78rem;color:#ef4444;font-weight:600;'>🔴 Contratar {_row['Contratar']}</div>"
+                        _sit_clean = _sit.replace("♻️ Redistribuir","").replace(f"🔴 Contratar {_row['Contratar']}","").strip(" · ")
+
+                        st.markdown(
+                            f"<div style='background:{_bg};border:1.5px solid {_border};border-radius:10px;"
+                            f"padding:.8rem 1.2rem;margin-bottom:.6rem;'>"
+                            f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;'>"
+                            f"<span style='font-weight:700;color:#1e293b;font-size:.95rem;'>📦 {_row['Módulo']}</span>"
+                            f"<span style='font-size:.78rem;color:{_color};font-weight:600;'>{_sit}</span>"
+                            f"</div>"
+                            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>"
+                            f"<div>"
+                            f"<div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
+                            f"letter-spacing:.05em;margin-bottom:.3rem;'>Sobrecarregados</div>"
+                            f"{_over_html}"
+                            f"</div>"
+                            f"<div>"
+                            f"<div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
+                            f"letter-spacing:.05em;margin-bottom:.3rem;'>{'Redistribuir para' if _redist_parts else 'Ação'}</div>"
+                            f"{_redist_html}"
+                            f"</div>"
+                            f"</div>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
                 else:
                     st.success("Nenhum gap identificado neste cenário.")
 

@@ -1622,7 +1622,10 @@ with tab5:
                 if _ws.get(_oc,0) <= _MAX: continue
                 _ps = _pi["slots"]
                 _cands = [(c, _MAX-_ws.get(c,0)) for c in _mc
-                          if c!=_oc and not _cjr.get(c,False) and (_MAX-_ws.get(c,0))>=_ps]
+                          if c!=_oc
+                          and not _cjr.get(c,False)
+                          and (_MAX-_ws.get(c,0))>=_ps      # enough free slots
+                          and _cslots.get(c,0) <= _MAX]      # not originally overloaded
                 _cands.sort(key=lambda x: x[1])
                 if _cands:
                     _bc,_ = _cands[0]
@@ -1720,8 +1723,11 @@ with tab5:
                 _mod = _mk(_pm.strip())
                 _mod_cons = [c for c,mods in _cmods.items() if _mod in mods]
                 for _fc in _mod_cons:
-                    _free = _MAX - _ws.get(_fc, _cslots.get(_fc,0))
-                    if _free >= _sv and not _cjr.get(_fc, False):
+                    # Use original slots to avoid suggesting consultants
+                    # whose slots were reduced by the model (projects moved away)
+                    _orig_slots = _cslots.get(_fc, 0)
+                    _free = _MAX - _orig_slots
+                    if _free >= _sv and not _cjr.get(_fc, False) and _orig_slots <= _MAX:
                         _candidates.append((_fc, _free, _mod))
 
             # Deduplicate by name, keep highest free
@@ -1752,6 +1758,7 @@ with tab5:
                 f"<td style='padding:5px 10px;font-size:.78rem;color:#1e293b;'>{_fase_b} {_proj_short}</td>"
                 f"<td style='padding:5px 10px;font-size:.78rem;color:#475569;'>{_perf}</td>"
                 f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{_comp} ×{_ded}</td>"
+                f"<td style='padding:5px 10px;font-size:.82rem;font-weight:700;color:#1e293b;text-align:center;'>{_sv:.1f}</td>"
                 f"<td style='padding:5px 10px;font-size:.78rem;'>{_action_html}</td>"
                 f"</tr>"
             )
@@ -1769,6 +1776,7 @@ with tab5:
                 "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Projeto</th>"
                 "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Perfil</th>"
                 "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Comp × Ded</th>"
+                "<th style='padding:6px 10px;text-align:center;font-size:.75rem;color:#64748b;font-weight:600;'>Slots</th>"
                 "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Indicativo</th>"
                 f"</tr></thead><tbody>{_vaga_rows_html}</tbody></table></div>",
                 unsafe_allow_html=True,

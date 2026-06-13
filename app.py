@@ -1691,16 +1691,13 @@ with tab5:
                 if any(_mk(_r.get("Perfil","")) == _m for _m in _mods_list)
             )
 
-            _ded_vals = [p["ded"] for p in _cprojs.get(_cn, [])]
-            _ded_media = round(sum(_ded_vals)/len(_ded_vals), 2) if _ded_vals else 1.0
-            _rec_rows.append({
+
             _rec_rows.append({
                 "Consultor":    _cn,
                 "Módulos":      ", ".join(_mods_list),
                 "Slots":        round(_slots, 1),
                 "Slots livres": round(_free, 1),
                 "Status":       _status,
-            })
             })
 
         _rec_df = pd.DataFrame(_rec_rows)
@@ -1710,15 +1707,11 @@ with tab5:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Consultor":    st.column_config.TextColumn("Consultor",     width="medium"),
-                    "Módulos":      st.column_config.TextColumn("Módulos",       width="medium"),
-                    "Capacidade":   st.column_config.NumberColumn("Capacidade",  width="small", format="%.0f"),
-                    "Slots":        st.column_config.NumberColumn("Slots ocup.", width="small", format="%.1f"),
-                    "Slots livres":    st.column_config.NumberColumn("Slots livres",   width="small", format="%.1f"),
-                    "Dedicação média": st.column_config.NumberColumn("Ded. média",      width="small", format="%.2f"),
-                    "Status":          st.column_config.TextColumn("Status",           width="medium"),
-                    "Sugestão":      st.column_config.TextColumn("Sugestão",      width="large"),
-
+                    "Consultor":    st.column_config.TextColumn("Consultor",    width="medium"),
+                    "Módulos":      st.column_config.TextColumn("Módulos",      width="medium"),
+                    "Slots":        st.column_config.NumberColumn("Slots ocup.",width="small", format="%.1f"),
+                    "Slots livres": st.column_config.NumberColumn("Slots livres",width="small", format="%.1f"),
+                    "Status":       st.column_config.TextColumn("Status",       width="medium"),
                 }
             )
 

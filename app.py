@@ -1533,16 +1533,26 @@ with tab5:
             if _c not in _cprojs: _cprojs[_c] = []
             _cprojs[_c].append({"proj":_proj,"slots":_s,"comp":_comp,"ded":_ded,"perf":_perf})
 
-        # Module membership
+        # Module membership — join by email to handle name mismatches
+        # Build email → canonical name from df1 (cockpit names are authoritative)
+        _email_to_name = {}
+        for _, _r in df1.iterrows():
+            _c = str(_r.get("Consultor","")).strip()
+            _e = str(_r.get("Email","")).strip().lower()
+            if _c and _e and _c != "nan": _email_to_name[_e] = _c
+
         _cmods = {}
         for _, _rr in df_rec.iterrows():
-            _cn = _rr["Consultor"]
-            if not _cn or str(_cn)=="nan": continue
-            _sr = str(_rr.get("Senioridade","")).strip().lower()
-            _cjr[_cn] = (_sr=="junior")
+            _em  = str(_rr.get("Email","")).strip().lower()
+            _cn  = _rr.get("Consultor","")
+            _sr  = str(_rr.get("Senioridade","")).strip().lower()
+            # Use cockpit name if email matches, otherwise use recursos name
+            _canon = _email_to_name.get(_em) or str(_cn).strip()
+            if not _canon or _canon == "nan": continue
+            _cjr[_canon] = (_sr == "junior")
             for _m in (_rr.get("Especialidades") or []):
-                if _cn not in _cmods: _cmods[_cn] = set()
-                _cmods[_cn].add(_m)
+                if _canon not in _cmods: _cmods[_canon] = set()
+                _cmods[_canon].add(_m)
 
         # Open vacancy demand by module
         _vaga_dem = {}

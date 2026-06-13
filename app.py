@@ -1708,6 +1708,87 @@ with tab5:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
+
+        # ── Tabela por Recurso ───────────────────────────────────
+        st.markdown('<div class="section-title">👤 Visão por Recurso</div>', unsafe_allow_html=True)
+
+        # Build summary per consultant
+        _rec_rows = []
+        for _cn, _slots in sorted(_cslots.items(), key=lambda x: -x[1]):
+            if _cjr.get(_cn, False): continue  # skip juniors
+            _mods_list = sorted(_cmods.get(_cn, set()))
+            _free      = max(0, _MAX - _slots)
+            _status    = "🔴 Sobrecarregado" if _slots > _MAX else ("🟡 No limite" if _slots >= _MAX*0.9 else "🟢 Disponível")
+
+            # Find redistribution suggestion for this consultant
+            _sug_redist = []
+            _sug_hire   = []
+            for _mod, _r in _cap_results.items():
+                for _oc, _pi, _bc in _r.get("moved", []):
+                    if _oc == _cn:
+                        _sug_redist.append(f"Mover {_pi['proj'][:25]} → {_bc.split()[0]} {_bc.split()[-1]}")
+                    if _bc == _cn:
+                        _sug_redist.append(f"Receber {_pi['proj'][:25]} de {_oc.split()[0]}")
+                if _r.get("hire",0) > 0 and _cn in [c for c,_ in _r.get("overloaded",[])]:
+                    _sug_hire.append(f"Contratar {_r['hire']} {_mod}")
+
+            # Vagas in modules this consultant covers
+            _vagas_mods = sum(_vaga_dem.get(_m, 0) for _m in _mods_list)
+
+            _rec_rows.append({
+                "Consultor":       _cn,
+                "Módulos":         ", ".join(_mods_list),
+                "Slots":           round(_slots, 1),
+                "Slots livres":    round(_free, 1),
+                "Status":          _status,
+                "Sugestão":        " · ".join(_sug_redist + _sug_hire) or "—",
+                "Vagas no módulo": round(_vagas_mods, 1),
+            })
+
+        _rec_df = pd.DataFrame(_rec_rows)
+        if not _rec_df.empty:
+            st.dataframe(
+                _rec_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Consultor":       st.column_config.TextColumn("Consultor",        width="medium"),
+                    "Módulos":         st.column_config.TextColumn("Módulos",           width="medium"),
+                    "Slots":           st.column_config.NumberColumn("Slots ocupados",  width="small", format="%.1f"),
+                    "Slots livres":    st.column_config.NumberColumn("Slots livres",    width="small", format="%.1f"),
+                    "Status":          st.column_config.TextColumn("Status",            width="medium"),
+                    "Sugestão":        st.column_config.TextColumn("Sugestão",          width="large"),
+                    "Vagas no módulo": st.column_config.NumberColumn("Vagas (slots)",   width="small", format="%.1f"),
+                }
+            )
+
+            # Summary by module: hiring need + open vacancies
+            st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
+            _mod_summary = []
+            for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
+                _mod_summary.append({
+                    "Módulo":        _mod,
+                    "Sobrecarregados": len(_r["overloaded"]),
+                    "Redistribuições": len(_r["moved"]),
+                    "Vagas (slots)": _r["vaga"],
+                    "Gap total":     _r["total_gap"],
+                    "Contratar":     _r["hire"],
+                })
+            _mod_df = pd.DataFrame(_mod_summary)
+            st.dataframe(
+                _mod_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Módulo":          st.column_config.TextColumn("Módulo",          width="small"),
+                    "Sobrecarregados": st.column_config.NumberColumn("Sobrecarregados",width="small"),
+                    "Redistribuições": st.column_config.NumberColumn("Redistribuições",width="small"),
+                    "Vagas (slots)":   st.column_config.NumberColumn("Vagas (slots)",  width="small", format="%.1f"),
+                    "Gap total":       st.column_config.NumberColumn("Gap total",       width="small", format="%.1f"),
+                    "Contratar":       st.column_config.NumberColumn("Contratar",       width="small"),
+                }
+            )
+
         # Vagas abertas
         if not df_hiring.empty:
             st.markdown('<div class="section-title">🔎 Vagas em Processo de Contratação</div>',

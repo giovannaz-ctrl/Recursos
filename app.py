@@ -1593,7 +1593,7 @@ with tab5:
                         _border= "#ef4444" if "Contratar" in _sit else "#f97316"
 
                         # Parse overloaded into visual slots
-                        def _slot_bar(slots, max_slots=MAX):
+                        def _slot_bar(slots, max_slots=3.0):
                             filled = min(int(round(slots)), 5)
                             pct    = min(slots / max_slots, 1.0)
                             if pct >= 1.0:   bar_color = "#ef4444"

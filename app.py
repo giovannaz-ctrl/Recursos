@@ -1486,33 +1486,52 @@ with tab5:
         # ── Análise de Capacidade e Contratação ──────────────────
         st.markdown('<div class="section-title">📊 Análise de Capacidade e Necessidade de Contratação</div>',
                     unsafe_allow_html=True)
-        st.markdown(
-            "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Modelo iterativo: slots consumidos por candidato são atualizados a cada redistribuição, "
-            "evitando sugerir a mesma pessoa para múltiplos módulos além de sua capacidade real."
-            "</div>", unsafe_allow_html=True,
-        )
+
+        # Legenda do racional
+        with st.expander("ℹ️ Como este cálculo funciona", expanded=False):
+            st.markdown("""
+**Cálculo de slots ocupados:**
+> `Slots = Complexidade do projeto × Peso Dedicação`
+> - Alta = 3.0 · Média = 1.5 · Baixa = 1.0
+> - Cada consultor tem capacidade máxima de **3 slots**
+
+**Redistribuição:**
+> Para cada consultor sobrecarregado (slots > 3), o sistema tenta mover projetos para consultores do mesmo módulo com slots suficientes para absorver o projeto inteiro. Juniores não são opção de redistribuição.
+
+**Contratação:**
+> Gap = projetos que não encontraram candidato para redistribuição + vagas em aberto sem consultor
+> `Contratar = floor(gap ÷ 3)` — arredondado para baixo para não inflar o headcount.
+
+**Peso Dedicação:**
+> Reflete o quanto aquele módulo consome do consultor naquele projeto. Ex: peso 0.4 = participação pontual.
+            """)
 
         import math as _math, copy as _copy
-        _SLOTS  = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
+        _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
+        _MAX   = 3.0
+        _ALIAS = {"AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI","Custeio":"CO","SAC":"SD","Planning":"SD"}
 
-        # Consultant slots
-        _cslots_orig = {}
-        _cgl    = {}
+        def _mk(p):
+            k = p.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if p else ""
+            return _ALIAS.get(k, k)
+
+        # Consultant slots + projects
+        _cslots = {}
+        _cprojs = {}
         _cjr    = {}
         for _, _r in df1.iterrows():
-            _c   = _r.get("Consultor","")
-            _comp= str(_r.get("Complexidade","Média")).strip()
-            _ded = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
-            _gl  = _r.get("GoLive")
-            _sen = str(_r.get("Senioridade","")).strip().lower()
-            _s   = _SLOTS.get(_comp,1.5) * _ded
+            _c    = _r.get("Consultor","")
+            _comp = str(_r.get("Complexidade","Média")).strip()
+            _ded  = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
+            _proj = _r.get("Projeto","")
+            _perf = _r.get("Módulo","")
+            _sen  = str(_r.get("Senioridade","")).strip().lower()
+            _s    = _SLOTS.get(_comp,1.5) * _ded
             if not _c or str(_c)=="nan": continue
-            _cslots_orig[_c] = _cslots_orig.get(_c,0) + _s
-            _cjr[_c] = (_sen=="junior")
-            if pd.notna(_gl):
-                if _c not in _cgl: _cgl[_c] = set()
-                _cgl[_c].add(pd.Timestamp(_gl).strftime("%Y-%m"))
+            _cslots[_c] = _cslots.get(_c,0) + _s
+            _cjr[_c]    = (_sen=="junior")
+            if _c not in _cprojs: _cprojs[_c] = []
+            _cprojs[_c].append({"proj":_proj,"slots":_s,"comp":_comp,"ded":_ded,"perf":_perf})
 
         # Module membership
         _cmods = {}
@@ -1525,115 +1544,169 @@ with tab5:
                 if _cn not in _cmods: _cmods[_cn] = set()
                 _cmods[_cn].add(_m)
 
-        def _run_iterative(MAX, label):
-            _ws = _copy.copy(_cslots_orig)  # working slots — updated each iteration
+        # Open vacancy demand by module
+        _vaga_dem = {}
+        for _, _r in df_vagas.iterrows():
+            _perf = _r.get("Perfil","")
+            _proj = _r.get("Projeto","")
+            _cr   = df1[df1["Projeto"]==_proj]["Complexidade"] if "Complexidade" in df1.columns else pd.Series(["Média"])
+            _dr   = df1[df1["Projeto"]==_proj]["Peso Dedicação"] if "Peso Dedicação" in df1.columns else pd.Series([1.0])
+            _comp = _cr.iloc[0] if not _cr.empty else "Média"
+            _ded  = float(_dr.iloc[0]) if not _dr.empty and pd.notna(_dr.iloc[0]) else 1.0
+            _mod  = _mk(_perf)
+            if _mod: _vaga_dem[_mod] = _vaga_dem.get(_mod,0) + _SLOTS.get(_comp,1.5)*_ded
 
-            # Sort modules by severity
-            _mod_sev = []
-            for _mod in sorted(set(m for mods in _cmods.values() for m in mods)):
-                _mc   = [c for c,mods in _cmods.items() if _mod in mods]
-                _over = [(c,_ws.get(c,0)) for c in _mc if _ws.get(c,0) > MAX]
-                if _over:
-                    _mod_sev.append((_mod, sum(s-MAX for _,s in _over), _over))
-            _mod_sev.sort(key=lambda x: -x[1])
+        # Iterative project-based model
+        _ws = _copy.copy(_cslots)
 
-            _results = []
-            for _mod, _total_over, _overloaded in _mod_sev:
-                _mc = [c for c,mods in _cmods.items() if _mod in mods]
-                # Recalculate free with CURRENT working slots (no juniors)
-                _free = [(c, MAX-_ws.get(c,0)) for c in _mc
-                         if _ws.get(c,0) < MAX and not _cjr.get(c,False)]
-                _free.sort(key=lambda x: -x[1])
-                _jr_gl = [c.split()[0] for c in _mc if _cjr.get(c) and _cgl.get(c)]
+        _mod_sev = []
+        for _mod in sorted(set(m for mods in _cmods.values() for m in mods)):
+            _mc   = [c for c,mods in _cmods.items() if _mod in mods]
+            _over = [(c,_ws.get(c,0)) for c in _mc if _ws.get(c,0) > _MAX]
+            if _over:
+                _mod_sev.append((_mod, sum(s-_MAX for _,s in _over), _over))
+        _mod_sev.sort(key=lambda x: -x[1])
 
-                _remaining = sum(s-MAX for _,s in [(c,_ws.get(c,0)) for c in _mc if _ws.get(c,0)>MAX])
-                _redist = []
-                for _fc, _fs in _free:
-                    if _remaining <= 0: break
-                    _absorb = min(_fs, _remaining)
-                    _ws[_fc] = _ws.get(_fc,0) + _absorb
-                    _remaining -= _absorb
-                    _gl_n = f" ⚠️GL {','.join(sorted(_cgl.get(_fc,set())))}" if _cgl.get(_fc) else ""
-                    _redist.append((_fc, _absorb, _gl_n))
+        _cap_results = {}
+        for _mod, _, _ in _mod_sev:
+            _mc        = [c for c,mods in _cmods.items() if _mod in mods]
+            _overloaded = [(c,_ws.get(c,0)) for c in _mc if _ws.get(c,0) > _MAX]
+            if not _overloaded: continue
+            _to_move = [(c,p) for c,_ in _overloaded
+                        for p in sorted(_cprojs.get(c,[]), key=lambda x: -x["slots"])]
+            _moved, _cant = [], []
+            for _oc, _pi in _to_move:
+                if _ws.get(_oc,0) <= _MAX: continue
+                _ps = _pi["slots"]
+                _cands = [(c, _MAX-_ws.get(c,0)) for c in _mc
+                          if c!=_oc and not _cjr.get(c,False) and (_MAX-_ws.get(c,0))>=_ps]
+                _cands.sort(key=lambda x: x[1])
+                if _cands:
+                    _bc,_ = _cands[0]
+                    _ws[_bc] = _ws.get(_bc,0) + _ps
+                    _ws[_oc] = _ws.get(_oc,0) - _ps
+                    _moved.append((_oc, _pi, _bc))
+                else:
+                    if _ws.get(_oc,0) > _MAX:
+                        _cant.append((_oc, _pi))
+            _remaining = sum(max(0,_ws.get(c,0)-_MAX) for c,_ in _overloaded)
+            _vaga      = _vaga_dem.get(_mod, 0)
+            _total_gap = _remaining + _vaga
+            _hire      = _math.floor(_total_gap / _MAX) if _total_gap > 0 else 0
+            _cap_results[_mod] = {
+                "overloaded": [(c, _cslots.get(c,0)) for c,_ in _overloaded],
+                "moved": _moved, "vaga": round(_vaga,1),
+                "remaining": round(_remaining,1), "total_gap": round(_total_gap,1),
+                "hire": _hire,
+            }
 
-                _hire = _math.ceil(_remaining / MAX) if _remaining > 0 else 0
-                _action = []
-                if _redist: _action.append("♻️ Redistribuir" + (" parcial" if _remaining > 0 else ""))
-                if _hire:   _action.append(f"🔴 Contratar {_hire}")
-                if _jr_gl:  _action.append(f"📅 GL apoio Jr: {', '.join(_jr_gl[:2])}")
+        _total_hire = sum(r["hire"] for r in _cap_results.values())
 
-                _results.append({
-                    "mod":        _mod,
-                    "overloaded": [(c,_ws_orig) for c,_ws_orig in _overloaded],
-                    "redist":     _redist,
-                    "hire":       _hire,
-                    "remaining":  round(_remaining,1),
-                    "action":     " · ".join(_action) if _action else "✅ Ok",
-                })
-            return _results, sum(r["hire"] for r in _results)
-
-        _res_c, _hire_c = _run_iterative(3.0, "Conservador")
-        _res_a, _hire_a = _run_iterative(2.0, "Arrojado")
-
-        # KPIs
+        # KPI
+        _n_redist = sum(1 for r in _cap_results.values() if r["moved"])
+        _n_hire   = sum(1 for r in _cap_results.values() if r["hire"] > 0)
         st.markdown(f"""
         <div class="kpi-grid">
-            {kpi_html(_hire_c, "Contratar (Conservador)", "amber")}
-            {kpi_html(_hire_a, "Contratar (Arrojado)",    "rose")}
+            {kpi_html(_total_hire,        "Contratar",             "rose")}
+            {kpi_html(_n_hire,            "Módulos com gap",       "amber")}
+            {kpi_html(_n_redist,          "Módulos redistribuir",  "green")}
         </div>
         """, unsafe_allow_html=True)
 
-        def _render_results(_results, MAX):
-            for _r in sorted(_results, key=lambda x: -x["hire"]):
-                _has_hire = _r["hire"] > 0
-                _color  = "#ef4444" if _has_hire and not _r["redist"] else "#f97316" if _has_hire else "#10b981"
-                _bg     = "#fef2f2" if _has_hire and not _r["redist"] else "#fff7ed" if _has_hire else "#f0fdf4"
+        # Build Excel export rows
+        _export_rows = []
+        for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
+            _action = []
+            if _r["moved"]:    _action.append("Redistribuir")
+            if _r["hire"] > 0: _action.append(f"Contratar {_r['hire']}")
+            if not _action:    _action.append("OK")
 
-                def _bar(slots):
-                    pct = min(slots/MAX, 1.5)
-                    if pct > 1.0:   col = "#ef4444"
-                    elif pct > 0.7: col = "#f97316"
-                    else:           col = "#10b981"
-                    filled = min(int(round(slots)), 5)
-                    return (f"<span style='color:{col};font-size:.9rem;letter-spacing:2px;'>"
-                            f"{'█'*filled}{'░'*max(0,3-filled)}</span>"
-                            f"<span style='font-size:.72rem;color:#64748b;'> {slots:.1f}/{MAX:.0f}</span>")
+            for _oc, _orig_slots in _r["overloaded"]:
+                _export_rows.append({
+                    "Módulo":             _mod,
+                    "Consultor":          _oc,
+                    "Slots ocupados":     round(_orig_slots,1),
+                    "Situação":           "Sobrecarregado",
+                    "Ação":               " · ".join(_action),
+                    "Redistribuir para":  "",
+                    "Projeto movido":     "",
+                    "Slots projeto":      "",
+                    "Vagas em aberto (slots)": _r["vaga"],
+                    "Gap total (slots)":  _r["total_gap"],
+                    "Contratar":          _r["hire"],
+                })
+            for _oc, _pi, _bc in _r["moved"]:
+                # Update redistribuir para
+                for row in _export_rows:
+                    if row["Módulo"]==_mod and row["Consultor"]==_oc and row["Redistribuir para"]=="":
+                        row["Redistribuir para"] = f"{_bc.split()[0]} {_bc.split()[-1]}"
+                        row["Projeto movido"]    = _pi["proj"][:40]
+                        row["Slots projeto"]     = round(_pi["slots"],1)
+                        break
 
-                _over_html = "".join(
-                    f"<div style='display:flex;align-items:center;gap:.4rem;padding:2px 0;'>"
-                    f"<span style='font-size:.78rem;color:#1e293b;min-width:120px;'>"
-                    f"{c.split()[0]} {c.split()[-1]}</span>{_bar(s)}</div>"
-                    for c,s in _r["overloaded"]
-                )
-                _redist_html = "".join(
-                    f"<div style='font-size:.78rem;color:#166534;padding:2px 0;'>"
-                    f"{'⚠️' if gl else '✅'} {fc.split()[0]} {fc.split()[-1]} "
-                    f"<span style='color:#94a3b8;'>absorve {ab:.1f}sl{gl}</span></div>"
-                    for fc,ab,gl in _r["redist"]
-                ) or (f"<div style='font-size:.78rem;color:#ef4444;font-weight:600;'>🔴 Contratar {_r['hire']}</div>"
-                      if _r["hire"] else "")
+        _export_df = pd.DataFrame(_export_rows)
 
-                st.markdown(
-                    f"<div style='background:{_bg};border:1.5px solid {_color};border-radius:10px;"
-                    f"padding:.8rem 1.2rem;margin-bottom:.6rem;'>"
-                    f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;'>"
-                    f"<span style='font-weight:700;color:#1e293b;font-size:.95rem;'>📦 {_r['mod']}</span>"
-                    f"<span style='font-size:.78rem;color:{_color};font-weight:600;'>{_r['action']}</span>"
-                    f"</div>"
-                    f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>"
-                    f"<div><div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
-                    f"letter-spacing:.05em;margin-bottom:.3rem;'>Sobrecarregados</div>{_over_html}</div>"
-                    f"<div><div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
-                    f"letter-spacing:.05em;margin-bottom:.3rem;'>Redistribuir / Contratar</div>{_redist_html}</div>"
-                    f"</div></div>",
-                    unsafe_allow_html=True,
-                )
+        # Visual cards
+        for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
+            _has_hire  = _r["hire"] > 0
+            _has_moved = bool(_r["moved"])
+            _color  = "#ef4444" if _has_hire and not _has_moved else "#f97316" if _has_hire else "#10b981"
+            _bg     = "#fef2f2" if _has_hire and not _has_moved else "#fff7ed" if _has_hire else "#f0fdf4"
+            _action_str = " · ".join(filter(None,[
+                "♻️ Redistribuir" if _has_moved else "",
+                f"🔴 Contratar {_r['hire']}" if _has_hire else "",
+                "✅ Ok" if not _has_hire and not _has_moved else "",
+            ]))
 
-        _tab_c, _tab_a = st.tabs(["🟡 Conservador (3 slots)", "🔴 Arrojado (2 slots)"])
-        with _tab_c:
-            _render_results(_res_c, 3.0)
-        with _tab_a:
-            _render_results(_res_a, 2.0)
+            _over_html = "".join(
+                f"<div style='display:flex;align-items:center;gap:.4rem;padding:2px 0;'>"
+                f"<span style='font-size:.78rem;color:#1e293b;min-width:120px;'>{c.split()[0]} {c.split()[-1]}</span>"
+                f"<span style='color:#ef4444;font-size:.85rem;letter-spacing:2px;'>{'█'*min(int(s),5)}{'░'*max(0,3-int(s))}</span>"
+                f"<span style='font-size:.72rem;color:#64748b;'> {s:.1f}/3.0</span>"
+                f"</div>"
+                for c,s in _r["overloaded"]
+            )
+            _move_html = "".join(
+                f"<div style='font-size:.78rem;color:#166534;padding:2px 0;'>"
+                f"✅ {_oc.split()[0]} → <b>{_bc.split()[0]} {_bc.split()[-1]}</b> "
+                f"<span style='color:#94a3b8;'>({_pi['proj'][:30]}, {_pi['slots']:.1f}sl)</span></div>"
+                for _oc,_pi,_bc in _r["moved"]
+            ) or (f"<div style='font-size:.78rem;color:#ef4444;font-weight:600;'>Sem candidato disponível</div>"
+                  if _has_hire else "")
+
+            _gap_html = ""
+            if _r["vaga"] > 0 or _r["hire"] > 0:
+                _gap_html = (
+                    f"<div style='margin-top:.4rem;font-size:.75rem;color:#64748b;'>"
+                    f"Gap: {_r['remaining']:.1f}sl sobrec. + {_r['vaga']:.1f}sl vagas = "
+                    f"<b style='color:#ef4444;'>{_r['total_gap']:.1f}sl → Contratar {_r['hire']}</b></div>"
+                ) if _r["hire"] > 0 else ""
+
+            st.markdown(
+                f"<div style='background:{_bg};border:1.5px solid {_color};border-radius:10px;"
+                f"padding:.8rem 1.2rem;margin-bottom:.6rem;'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;'>"
+                f"<span style='font-weight:700;color:#1e293b;font-size:.95rem;'>📦 {_mod}</span>"
+                f"<span style='font-size:.78rem;color:{_color};font-weight:600;'>{_action_str}</span>"
+                f"</div>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>"
+                f"<div><div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
+                f"letter-spacing:.05em;margin-bottom:.3rem;'>Sobrecarregados</div>{_over_html}</div>"
+                f"<div><div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
+                f"letter-spacing:.05em;margin-bottom:.3rem;'>Redistribuição / Contratação</div>{_move_html}</div>"
+                f"</div>{_gap_html}</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Export Excel button
+        if not _export_df.empty:
+            st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+            st.download_button(
+                "⬇ Exportar análise de capacidade (Excel)",
+                to_excel_bytes(_export_df),
+                file_name="analise_capacidade.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
         # Vagas abertas
         if not df_hiring.empty:

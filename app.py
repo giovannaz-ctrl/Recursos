@@ -1661,7 +1661,6 @@ with tab5:
 
         _rec_rows = []
         for _cn, _slots in sorted(_cslots.items(), key=lambda x: -x[1]):
-            if _cjr.get(_cn, False): continue
             _mods_list = sorted(_cmods.get(_cn, set()))
             _free      = max(0, _MAX - _slots)
             _status    = "🔴 Sobrecarregado" if _slots > _MAX else ("🟡 No limite" if _slots >= _MAX*0.9 else "🟢 Disponível")

@@ -1488,90 +1488,92 @@ with tab5:
                     unsafe_allow_html=True)
         st.markdown(
             "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Slots = Complexidade × Peso Dedicação por linha. Júniores não entram como opção de redistribuição "
-            "mas apoiam em Go Lives. ⚠️ = Go Live naquele período."
+            "Modelo iterativo: slots consumidos por candidato são atualizados a cada redistribuição, "
+            "evitando sugerir a mesma pessoa para múltiplos módulos além de sua capacidade real."
             "</div>", unsafe_allow_html=True,
         )
 
-        import math as _math
+        import math as _math, copy as _copy
         _SLOTS  = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
-        _MAX_C  = 3.0  # conservador
-        _MAX_A  = 2.0  # arrojado
-        _MODULOS_CAP = [c for c in df_rec.columns
-                        if c not in ("Consultor","Senioridade","Email","Modulos","Alocado",
-                                     "Status","Especialidades")]
 
-        # Slots per consultant = complexidade × peso dedicação (no dedup)
-        _cslots   = {}
-        _cprojs   = {}
-        _cgl      = {}
-        _cjunior  = {}
-
+        # Consultant slots
+        _cslots_orig = {}
+        _cgl    = {}
+        _cjr    = {}
         for _, _r in df1.iterrows():
-            _c    = _r.get("Consultor","")
-            _comp = str(_r.get("Complexidade","Média")).strip()
-            _ded  = float(_r.get("Peso Dedicação", 1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
-            _proj = _r.get("Projeto","")
-            _gl   = _r.get("GoLive")
-            _sen  = str(_r.get("Senioridade","")).strip().lower()
-            _s    = _SLOTS.get(_comp, 1.5) * _ded
-            if not _c or str(_c) == "nan": continue
-            _cslots[_c]  = _cslots.get(_c, 0) + _s
-            _cjunior[_c] = (_sen == "junior")
-            if _c not in _cprojs: _cprojs[_c] = []
-            _cprojs[_c].append((_proj, _comp, _ded, round(_s,2)))
+            _c   = _r.get("Consultor","")
+            _comp= str(_r.get("Complexidade","Média")).strip()
+            _ded = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
+            _gl  = _r.get("GoLive")
+            _sen = str(_r.get("Senioridade","")).strip().lower()
+            _s   = _SLOTS.get(_comp,1.5) * _ded
+            if not _c or str(_c)=="nan": continue
+            _cslots_orig[_c] = _cslots_orig.get(_c,0) + _s
+            _cjr[_c] = (_sen=="junior")
             if pd.notna(_gl):
                 if _c not in _cgl: _cgl[_c] = set()
                 _cgl[_c].add(pd.Timestamp(_gl).strftime("%Y-%m"))
 
-        # Module membership from df_rec
-        _cmodules = {}
+        # Module membership
+        _cmods = {}
         for _, _rr in df_rec.iterrows():
             _cn = _rr["Consultor"]
-            if not _cn or str(_cn) == "nan": continue
+            if not _cn or str(_cn)=="nan": continue
             _sr = str(_rr.get("Senioridade","")).strip().lower()
-            _cjunior[_cn] = (_sr == "junior")
+            _cjr[_cn] = (_sr=="junior")
             for _m in (_rr.get("Especialidades") or []):
-                if _cn not in _cmodules: _cmodules[_cn] = set()
-                _cmodules[_cn].add(_m)
+                if _cn not in _cmods: _cmods[_cn] = set()
+                _cmods[_cn].add(_m)
 
-        def _run_model(MAX, label):
-            _rows = []
-            _total_hire = 0
-            for _mod in sorted(set(m for mods in _cmodules.values() for m in mods)):
-                _mod_cons   = [c for c, mods in _cmodules.items() if _mod in mods]
-                if not _mod_cons: continue
-                _overloaded = [(c, _cslots.get(c,0)) for c in _mod_cons if _cslots.get(c,0) > MAX]
-                _free_sr    = [(c, MAX - _cslots.get(c,0)) for c in _mod_cons
-                               if _cslots.get(c,0) < MAX and not _cjunior.get(c, False)]
-                _free_jr    = [(c, MAX - _cslots.get(c,0)) for c in _mod_cons
-                               if _cslots.get(c,0) < MAX and _cjunior.get(c, False)]
-                if not _overloaded: continue
-                _total_over = sum(s - MAX for _, s in _overloaded)
-                _total_free = sum(f for _, f in _free_sr)
-                _action, _hire, _redist = [], 0, []
-                if _total_free > 0:
-                    for _fc, _fs in _free_sr:
-                        _gl_note = f" ⚠️GL {','.join(sorted(_cgl.get(_fc,set())))}" if _cgl.get(_fc) else ""
-                        _redist.append(f"{_fc.split()[0]} {_fc.split()[-1]} ({_fs:.1f}sl{_gl_note})")
-                    _action.append("♻️ Redistribuir")
-                else:
-                    _hire = _math.ceil(_total_over / MAX)
-                    _action.append(f"🔴 Contratar {_hire}")
-                    _total_hire += _hire
-                _jr_gl = [c.split()[0] for c,_ in _free_jr if _cgl.get(c)]
-                if _jr_gl: _action.append(f"📅 GL apoio Jr: {', '.join(_jr_gl[:2])}")
-                _rows.append({
-                    "Módulo":        _mod,
-                    "Sobrecarregados": ", ".join(f"{c.split()[0]} {c.split()[-1]} ({s:.1f}sl)" for c,s in _overloaded),
-                    "Redistribuir para": "; ".join(_redist[:3]) if _redist else "—",
-                    "Contratar":     int(_hire),
-                    "Situação":      " · ".join(_action),
+        def _run_iterative(MAX, label):
+            _ws = _copy.copy(_cslots_orig)  # working slots — updated each iteration
+
+            # Sort modules by severity
+            _mod_sev = []
+            for _mod in sorted(set(m for mods in _cmods.values() for m in mods)):
+                _mc   = [c for c,mods in _cmods.items() if _mod in mods]
+                _over = [(c,_ws.get(c,0)) for c in _mc if _ws.get(c,0) > MAX]
+                if _over:
+                    _mod_sev.append((_mod, sum(s-MAX for _,s in _over), _over))
+            _mod_sev.sort(key=lambda x: -x[1])
+
+            _results = []
+            for _mod, _total_over, _overloaded in _mod_sev:
+                _mc = [c for c,mods in _cmods.items() if _mod in mods]
+                # Recalculate free with CURRENT working slots (no juniors)
+                _free = [(c, MAX-_ws.get(c,0)) for c in _mc
+                         if _ws.get(c,0) < MAX and not _cjr.get(c,False)]
+                _free.sort(key=lambda x: -x[1])
+                _jr_gl = [c.split()[0] for c in _mc if _cjr.get(c) and _cgl.get(c)]
+
+                _remaining = sum(s-MAX for _,s in [(c,_ws.get(c,0)) for c in _mc if _ws.get(c,0)>MAX])
+                _redist = []
+                for _fc, _fs in _free:
+                    if _remaining <= 0: break
+                    _absorb = min(_fs, _remaining)
+                    _ws[_fc] = _ws.get(_fc,0) + _absorb
+                    _remaining -= _absorb
+                    _gl_n = f" ⚠️GL {','.join(sorted(_cgl.get(_fc,set())))}" if _cgl.get(_fc) else ""
+                    _redist.append((_fc, _absorb, _gl_n))
+
+                _hire = _math.ceil(_remaining / MAX) if _remaining > 0 else 0
+                _action = []
+                if _redist: _action.append("♻️ Redistribuir" + (" parcial" if _remaining > 0 else ""))
+                if _hire:   _action.append(f"🔴 Contratar {_hire}")
+                if _jr_gl:  _action.append(f"📅 GL apoio Jr: {', '.join(_jr_gl[:2])}")
+
+                _results.append({
+                    "mod":        _mod,
+                    "overloaded": [(c,_ws_orig) for c,_ws_orig in _overloaded],
+                    "redist":     _redist,
+                    "hire":       _hire,
+                    "remaining":  round(_remaining,1),
+                    "action":     " · ".join(_action) if _action else "✅ Ok",
                 })
-            return pd.DataFrame(_rows).sort_values(["Contratar"], ascending=False) if _rows else pd.DataFrame(), _total_hire
+            return _results, sum(r["hire"] for r in _results)
 
-        _df_c, _hire_c = _run_model(_MAX_C, "Conservador")
-        _df_a, _hire_a = _run_model(_MAX_A, "Arrojado")
+        _res_c, _hire_c = _run_iterative(3.0, "Conservador")
+        _res_a, _hire_a = _run_iterative(2.0, "Arrojado")
 
         # KPIs
         st.markdown(f"""
@@ -1581,83 +1583,57 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
 
-        # Two tabs for scenarios
+        def _render_results(_results, MAX):
+            for _r in sorted(_results, key=lambda x: -x["hire"]):
+                _has_hire = _r["hire"] > 0
+                _color  = "#ef4444" if _has_hire and not _r["redist"] else "#f97316" if _has_hire else "#10b981"
+                _bg     = "#fef2f2" if _has_hire and not _r["redist"] else "#fff7ed" if _has_hire else "#f0fdf4"
+
+                def _bar(slots):
+                    pct = min(slots/MAX, 1.5)
+                    if pct > 1.0:   col = "#ef4444"
+                    elif pct > 0.7: col = "#f97316"
+                    else:           col = "#10b981"
+                    filled = min(int(round(slots)), 5)
+                    return (f"<span style='color:{col};font-size:.9rem;letter-spacing:2px;'>"
+                            f"{'█'*filled}{'░'*max(0,3-filled)}</span>"
+                            f"<span style='font-size:.72rem;color:#64748b;'> {slots:.1f}/{MAX:.0f}</span>")
+
+                _over_html = "".join(
+                    f"<div style='display:flex;align-items:center;gap:.4rem;padding:2px 0;'>"
+                    f"<span style='font-size:.78rem;color:#1e293b;min-width:120px;'>"
+                    f"{c.split()[0]} {c.split()[-1]}</span>{_bar(s)}</div>"
+                    for c,s in _r["overloaded"]
+                )
+                _redist_html = "".join(
+                    f"<div style='font-size:.78rem;color:#166534;padding:2px 0;'>"
+                    f"{'⚠️' if gl else '✅'} {fc.split()[0]} {fc.split()[-1]} "
+                    f"<span style='color:#94a3b8;'>absorve {ab:.1f}sl{gl}</span></div>"
+                    for fc,ab,gl in _r["redist"]
+                ) or (f"<div style='font-size:.78rem;color:#ef4444;font-weight:600;'>🔴 Contratar {_r['hire']}</div>"
+                      if _r["hire"] else "")
+
+                st.markdown(
+                    f"<div style='background:{_bg};border:1.5px solid {_color};border-radius:10px;"
+                    f"padding:.8rem 1.2rem;margin-bottom:.6rem;'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;'>"
+                    f"<span style='font-weight:700;color:#1e293b;font-size:.95rem;'>📦 {_r['mod']}</span>"
+                    f"<span style='font-size:.78rem;color:{_color};font-weight:600;'>{_r['action']}</span>"
+                    f"</div>"
+                    f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>"
+                    f"<div><div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
+                    f"letter-spacing:.05em;margin-bottom:.3rem;'>Sobrecarregados</div>{_over_html}</div>"
+                    f"<div><div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
+                    f"letter-spacing:.05em;margin-bottom:.3rem;'>Redistribuir / Contratar</div>{_redist_html}</div>"
+                    f"</div></div>",
+                    unsafe_allow_html=True,
+                )
+
         _tab_c, _tab_a = st.tabs(["🟡 Conservador (3 slots)", "🔴 Arrojado (2 slots)"])
-        for _tab, _df, _label in [(_tab_c, _df_c, "Conservador"), (_tab_a, _df_a, "Arrojado")]:
-            with _tab:
-                if not _df.empty:
-                    for _, _row in _df.iterrows():
-                        _sit = _row["Situação"]
-                        _color = "#ef4444" if "Contratar" in _sit else "#f97316"
-                        _bg    = "#fef2f2" if "Contratar" in _sit else "#fff7ed"
-                        _border= "#ef4444" if "Contratar" in _sit else "#f97316"
-
-                        # Parse overloaded into visual slots
-                        def _slot_bar(slots, max_slots=3.0):
-                            filled = min(int(round(slots)), 5)
-                            pct    = min(slots / max_slots, 1.0)
-                            if pct >= 1.0:   bar_color = "#ef4444"
-                            elif pct >= 0.7: bar_color = "#f97316"
-                            else:            bar_color = "#10b981"
-                            blocks = "█" * filled + "░" * max(0, 3 - filled)
-                            return f"<span style='color:{bar_color}; font-size:.9rem; letter-spacing:2px;'>{blocks}</span> <span style='font-size:.75rem; color:#64748b;'>{slots:.1f}/{max_slots:.0f}</span>"
-
-                        # Build overloaded html
-                        _over_parts = []
-                        for _op in _row["Sobrecarregados"].split(", "):
-                            try:
-                                _name = _op.rsplit("(", 1)[0].strip()
-                                _sl   = float(_op.rsplit("(", 1)[1].replace("sl)",""))
-                                _over_parts.append(
-                                    f"<div style='display:flex;align-items:center;gap:.5rem;padding:2px 0;'>"
-                                    f"<span style='font-size:.8rem;color:#1e293b;min-width:140px;'>{_name}</span>"
-                                    f"{_slot_bar(_sl)}"
-                                    f"</div>"
-                                )
-                            except: pass
-
-                        # Build redist html
-                        _redist_parts = []
-                        for _rp in _row["Redistribuir para"].split("; "):
-                            if _rp == "—": continue
-                            try:
-                                _rname = _rp.split("(")[0].strip()
-                                _rrest = "(" + _rp.split("(")[1] if "(" in _rp else ""
-                                _gl_flag = "⚠️" if "⚠️GL" in _rp else "✅"
-                                _redist_parts.append(
-                                    f"<div style='font-size:.78rem;color:#166534;padding:1px 0;'>"
-                                    f"{_gl_flag} {_rname} <span style='color:#94a3b8;'>{_rrest}</span></div>"
-                                )
-                            except: pass
-
-                        _over_html   = "".join(_over_parts) or "—"
-                        _redist_html = "".join(_redist_parts) or                             f"<div style='font-size:.78rem;color:#ef4444;font-weight:600;'>🔴 Contratar {_row['Contratar']}</div>"
-                        _sit_clean = _sit.replace("♻️ Redistribuir","").replace(f"🔴 Contratar {_row['Contratar']}","").strip(" · ")
-
-                        st.markdown(
-                            f"<div style='background:{_bg};border:1.5px solid {_border};border-radius:10px;"
-                            f"padding:.8rem 1.2rem;margin-bottom:.6rem;'>"
-                            f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;'>"
-                            f"<span style='font-weight:700;color:#1e293b;font-size:.95rem;'>📦 {_row['Módulo']}</span>"
-                            f"<span style='font-size:.78rem;color:{_color};font-weight:600;'>{_sit}</span>"
-                            f"</div>"
-                            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>"
-                            f"<div>"
-                            f"<div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
-                            f"letter-spacing:.05em;margin-bottom:.3rem;'>Sobrecarregados</div>"
-                            f"{_over_html}"
-                            f"</div>"
-                            f"<div>"
-                            f"<div style='font-size:.7rem;color:#64748b;font-weight:600;text-transform:uppercase;"
-                            f"letter-spacing:.05em;margin-bottom:.3rem;'>{'Redistribuir para' if _redist_parts else 'Ação'}</div>"
-                            f"{_redist_html}"
-                            f"</div>"
-                            f"</div>"
-                            f"</div>",
-                            unsafe_allow_html=True,
-                        )
-                else:
-                    st.success("Nenhum gap identificado neste cenário.")
+        with _tab_c:
+            _render_results(_res_c, 3.0)
+        with _tab_a:
+            _render_results(_res_a, 2.0)
 
         # Vagas abertas
         if not df_hiring.empty:

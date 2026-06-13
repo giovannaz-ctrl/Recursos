@@ -1702,10 +1702,13 @@ with tab5:
             "</div>", unsafe_allow_html=True,
         )
 
-        # Build per-vacancy view
+        # Build per-vacancy view — iterative: deduct slots as candidates are assigned
         _vaga_rows_html = ""
         _n_redist_v = 0
         _n_hire_v   = 0
+
+        # Working copy of slots for vacancy assignment — starts from original
+        _vws = {c: s for c, s in _cslots.items()}
 
         for _, _vr in df_vagas.iterrows():
             _perf  = str(_vr.get("Perfil","")).strip()
@@ -1723,11 +1726,12 @@ with tab5:
                 _mod = _mk(_pm.strip())
                 _mod_cons = [c for c,mods in _cmods.items() if _mod in mods]
                 for _fc in _mod_cons:
-                    # Use original slots to avoid suggesting consultants
-                    # whose slots were reduced by the model (projects moved away)
-                    _orig_slots = _cslots.get(_fc, 0)
-                    _free = _MAX - _orig_slots
-                    if _free >= _sv and not _cjr.get(_fc, False) and _orig_slots <= _MAX:
+                    _cur_slots = _vws.get(_fc, _cslots.get(_fc, 0))
+                    _free = _MAX - _cur_slots
+                    # Only suggest if: not originally overloaded AND has enough free slots now
+                    if (_free >= _sv
+                        and not _cjr.get(_fc, False)
+                        and _cslots.get(_fc, 0) <= _MAX):
                         _candidates.append((_fc, _free, _mod))
 
             # Deduplicate by name, keep highest free
@@ -1739,6 +1743,9 @@ with tab5:
 
             if _candidates:
                 _n_redist_v += 1
+                # Deduct slots from best candidate (most free) to prevent double-assignment
+                _best_c, (_best_fr, _best_m) = _candidates[0]
+                _vws[_best_c] = _vws.get(_best_c, _cslots.get(_best_c, 0)) + _sv
                 _cand_html = " · ".join(
                     f"<b>{c.split()[0]} {c.split()[-1]}</b> ({fr:.1f}sl livres)"
                     for c,(fr,_) in _candidates

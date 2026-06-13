@@ -169,6 +169,8 @@ def load_data(file_bytes: bytes):
         fase        = str(fase_raw).strip() if fase_raw is not None and pd.notna(fase_raw) else "—"
         comp_raw    = row.get("Complexidade", None)
         complexidade = str(comp_raw).strip() if comp_raw is not None and pd.notna(comp_raw) else "Média"
+        ded_raw     = row.get("Peso Dedicação", None)
+        dedicacao   = float(ded_raw) if ded_raw is not None and pd.notna(ded_raw) else 1.0
 
 
         # Principal consultant(s)
@@ -178,7 +180,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Principal", "Fase": fase, "Complexidade": complexidade})
+                         "Senioridade": senioridade, "Papel": "Principal", "Fase": fase, "Complexidade": complexidade, "Peso Dedicação": dedicacao})
 
         # Secondary / shadow consultant(s)
         for part in (raw_secu.split(",") if raw_secu.strip() not in ("","nan") else []):
@@ -187,7 +189,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase, "Complexidade": complexidade})
+                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase, "Complexidade": complexidade, "Peso Dedicação": dedicacao})
 
         # Vaga: no principal assigned
         if not split_consultants(raw_prin) and perfil not in ("", "nan"):
@@ -1486,102 +1488,114 @@ with tab5:
                     unsafe_allow_html=True)
         st.markdown(
             "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Modelo considera: <b>complexidade</b> (Alta=exclusivo · Média=2 proj · Baixa=3 proj), "
-            "<b>vagas em aberto</b>, <b>consultores no limite</b> e <b>sobreposição de Go Lives</b>."
+            "Slots = Complexidade × Peso Dedicação por linha. Júniores não entram como opção de redistribuição "
+            "mas apoiam em Go Lives. ⚠️ = Go Live naquele período."
             "</div>", unsafe_allow_html=True,
         )
 
         import math as _math
-        _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
-        _MAX   = 3.0
-        _ALIAS = {"AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI","Custeio":"CO","SAC":"SD","Planning":"SD"}
+        _SLOTS  = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
+        _MAX_C  = 3.0  # conservador
+        _MAX_A  = 2.0  # arrojado
+        _MODULOS_CAP = [c for c in df_rec.columns
+                        if c not in ("Consultor","Senioridade","Email","Modulos","Alocado",
+                                     "Status","Especialidades")]
 
-        def _mk(p):
-            k = p.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if p else ""
-            return _ALIAS.get(k, k)
+        # Slots per consultant = complexidade × peso dedicação (no dedup)
+        _cslots   = {}
+        _cprojs   = {}
+        _cgl      = {}
+        _cjunior  = {}
 
-        # Slots consumed per consultant
-        _cslots = {}
-        for _, _r in df1[df1["Papel"]=="Principal"].drop_duplicates(subset=["Consultor","Projeto"]).iterrows():
-            _c = _r["Consultor"]
-            _cslots[_c] = _cslots.get(_c, 0) + _SLOTS.get(_r.get("Complexidade","Média"), 1.5)
-
-        # Go Live conflicts per consultant
-        _gl_months = {}
-        _gl_src = df_golive[df_golive["Papel"]=="Principal"] if "Papel" in df_golive.columns else df_golive
-        for _, _r in _gl_src.iterrows():
-            _c, _gl = _r.get("Consultor",""), _r.get("GoLive")
-            if _c and pd.notna(_gl):
-                _m = pd.Timestamp(_gl).strftime("%Y-%m")
-                if _c not in _gl_months: _gl_months[_c] = {}
-                _gl_months[_c][_m] = _gl_months[_c].get(_m, 0) + 1
-        _gl_cons = {c for c, ms in _gl_months.items() if any(v > 1 for v in ms.values())}
-
-        # Module capacity + limit count
-        _mod_cap, _mod_lim = {}, {}
-        _sr_rec = df_rec[df_rec["Senioridade"].str.lower() != "junior"] if "Senioridade" in df_rec.columns else df_rec
-        for _, _rr in _sr_rec.iterrows():
-            _cn   = _rr["Consultor"]
-            _free = max(0, _MAX - _cslots.get(_cn, 0))
-            for _m in (_rr.get("Especialidades") or []):
-                _mod_cap[_m] = _mod_cap.get(_m, 0) + _free
-                if _cslots.get(_cn, 0) >= _MAX:
-                    _mod_lim[_m] = _mod_lim.get(_m, 0) + 1
-
-        # Module demand from vacancies
-        _mod_dem = {}
-        for _, _r in df_vagas.iterrows():
-            _perf = _r.get("Perfil","")
+        for _, _r in df1.iterrows():
+            _c    = _r.get("Consultor","")
+            _comp = str(_r.get("Complexidade","Média")).strip()
+            _ded  = float(_r.get("Peso Dedicação", 1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
             _proj = _r.get("Projeto","")
-            _cr   = df1[df1["Projeto"]==_proj]["Complexidade"] if "Complexidade" in df1.columns else pd.Series(["Média"])
-            _comp = _cr.iloc[0] if not _cr.empty else "Média"
-            _key  = _mk(_perf)
-            if _key: _mod_dem[_key] = _mod_dem.get(_key, 0) + _SLOTS.get(_comp, 1.5)
+            _gl   = _r.get("GoLive")
+            _sen  = str(_r.get("Senioridade","")).strip().lower()
+            _s    = _SLOTS.get(_comp, 1.5) * _ded
+            if not _c or str(_c) == "nan": continue
+            _cslots[_c]  = _cslots.get(_c, 0) + _s
+            _cjunior[_c] = (_sen == "junior")
+            if _c not in _cprojs: _cprojs[_c] = []
+            _cprojs[_c].append((_proj, _comp, _ded, round(_s,2)))
+            if pd.notna(_gl):
+                if _c not in _cgl: _cgl[_c] = set()
+                _cgl[_c].add(pd.Timestamp(_gl).strftime("%Y-%m"))
 
-        # Build table
-        _cap_rows = []
-        for _mod in sorted(set(_mod_dem) | {m for m in _mod_lim if _mod_lim[m] > 0}):
-            _dem  = _mod_dem.get(_mod, 0)
-            _cap  = _mod_cap.get(_mod, 0)
-            _lim  = _mod_lim.get(_mod, 0)
-            _gap  = max(0, _dem - _cap)
-            _hire = _math.ceil(_gap / _MAX) if _gap > 0 else 0
-            _gl   = any(_mod in (_rr.get("Especialidades") or []) and _rr["Consultor"] in _gl_cons
-                        for _, _rr in _sr_rec.iterrows())
-            _flags = []
-            if _hire > 0: _flags.append("⚠️ Gap")
-            if _lim > 0:  _flags.append(f"🔴 {_lim} no limite")
-            if _gl:       _flags.append("📅 Go Live risk")
-            if not _flags: _flags.append("✅ Ok")
-            if _dem > 0 or _lim > 0 or _gl:
-                _cap_rows.append({"Módulo": _mod, "Demanda": round(_dem,1),
-                    "Cap. livre": round(_cap,1), "No limite": int(_lim),
-                    "Contratar": int(_hire), "Situação": " · ".join(_flags)})
+        # Module membership from df_rec
+        _cmodules = {}
+        for _, _rr in df_rec.iterrows():
+            _cn = _rr["Consultor"]
+            if not _cn or str(_cn) == "nan": continue
+            _sr = str(_rr.get("Senioridade","")).strip().lower()
+            _cjunior[_cn] = (_sr == "junior")
+            for _m in (_rr.get("Especialidades") or []):
+                if _cn not in _cmodules: _cmodules[_cn] = set()
+                _cmodules[_cn].add(_m)
 
-        _cap_df    = pd.DataFrame(_cap_rows).sort_values(["Contratar","No limite"], ascending=False) if _cap_rows else pd.DataFrame()
-        _total_hire = int(_cap_df["Contratar"].sum()) if not _cap_df.empty else 0
-        _n_gap      = int((_cap_df["Contratar"] > 0).sum()) if not _cap_df.empty else 0
-        _n_lim      = int((_cap_df["No limite"] > 0).sum()) if not _cap_df.empty else 0
+        def _run_model(MAX, label):
+            _rows = []
+            _total_hire = 0
+            for _mod in sorted(set(m for mods in _cmodules.values() for m in mods)):
+                _mod_cons   = [c for c, mods in _cmodules.items() if _mod in mods]
+                if not _mod_cons: continue
+                _overloaded = [(c, _cslots.get(c,0)) for c in _mod_cons if _cslots.get(c,0) > MAX]
+                _free_sr    = [(c, MAX - _cslots.get(c,0)) for c in _mod_cons
+                               if _cslots.get(c,0) < MAX and not _cjunior.get(c, False)]
+                _free_jr    = [(c, MAX - _cslots.get(c,0)) for c in _mod_cons
+                               if _cslots.get(c,0) < MAX and _cjunior.get(c, False)]
+                if not _overloaded: continue
+                _total_over = sum(s - MAX for _, s in _overloaded)
+                _total_free = sum(f for _, f in _free_sr)
+                _action, _hire, _redist = [], 0, []
+                if _total_free > 0:
+                    for _fc, _fs in _free_sr:
+                        _gl_note = f" ⚠️GL {','.join(sorted(_cgl.get(_fc,set())))}" if _cgl.get(_fc) else ""
+                        _redist.append(f"{_fc.split()[0]} {_fc.split()[-1]} ({_fs:.1f}sl{_gl_note})")
+                    _action.append("♻️ Redistribuir")
+                else:
+                    _hire = _math.ceil(_total_over / MAX)
+                    _action.append(f"🔴 Contratar {_hire}")
+                    _total_hire += _hire
+                _jr_gl = [c.split()[0] for c,_ in _free_jr if _cgl.get(c)]
+                if _jr_gl: _action.append(f"📅 GL apoio Jr: {', '.join(_jr_gl[:2])}")
+                _rows.append({
+                    "Módulo":        _mod,
+                    "Sobrecarregados": ", ".join(f"{c.split()[0]} {c.split()[-1]} ({s:.1f}sl)" for c,s in _overloaded),
+                    "Redistribuir para": "; ".join(_redist[:3]) if _redist else "—",
+                    "Contratar":     int(_hire),
+                    "Situação":      " · ".join(_action),
+                })
+            return pd.DataFrame(_rows).sort_values(["Contratar"], ascending=False) if _rows else pd.DataFrame(), _total_hire
 
+        _df_c, _hire_c = _run_model(_MAX_C, "Conservador")
+        _df_a, _hire_a = _run_model(_MAX_A, "Arrojado")
+
+        # KPIs
         st.markdown(f"""
         <div class="kpi-grid">
-            {kpi_html(_total_hire, "Contratar",          "rose")}
-            {kpi_html(_n_gap,      "Módulos com gap",    "amber")}
-            {kpi_html(_n_lim,      "Módulos no limite",  "rose")}
-            {kpi_html(len(df_hiring) if not df_hiring.empty else 0, "Vagas abertas", "green")}
+            {kpi_html(_hire_c, "Contratar (Conservador)", "amber")}
+            {kpi_html(_hire_a, "Contratar (Arrojado)",    "rose")}
         </div>
         """, unsafe_allow_html=True)
 
-        if not _cap_df.empty:
-            st.dataframe(_cap_df, use_container_width=True, hide_index=True,
-                column_config={
-                    "Módulo":     st.column_config.TextColumn("Módulo",      width="small"),
-                    "Demanda":    st.column_config.NumberColumn("Demanda",   width="small", format="%.1f"),
-                    "Cap. livre": st.column_config.NumberColumn("Cap. livre",width="small", format="%.1f"),
-                    "No limite":  st.column_config.NumberColumn("No limite", width="small"),
-                    "Contratar":  st.column_config.NumberColumn("Contratar", width="small"),
-                    "Situação":   st.column_config.TextColumn("Situação",    width="large"),
-                })
+        # Two tabs for scenarios
+        _tab_c, _tab_a = st.tabs(["🟡 Conservador (3 slots)", "🔴 Arrojado (2 slots)"])
+        for _tab, _df, _label in [(_tab_c, _df_c, "Conservador"), (_tab_a, _df_a, "Arrojado")]:
+            with _tab:
+                if not _df.empty:
+                    st.dataframe(_df, use_container_width=True, hide_index=True,
+                        column_config={
+                            "Módulo":           st.column_config.TextColumn("Módulo",            width="small"),
+                            "Sobrecarregados":  st.column_config.TextColumn("Sobrecarregados",   width="large"),
+                            "Redistribuir para":st.column_config.TextColumn("Redistribuir para", width="large"),
+                            "Contratar":        st.column_config.NumberColumn("Contratar",        width="small"),
+                            "Situação":         st.column_config.TextColumn("Situação",           width="medium"),
+                        })
+                else:
+                    st.success("Nenhum gap identificado neste cenário.")
 
         # Vagas abertas
         if not df_hiring.empty:

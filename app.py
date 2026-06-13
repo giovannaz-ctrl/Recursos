@@ -1726,11 +1726,18 @@ with tab5:
             for _mod, _r in _cap_results.items():
                 for _oc, _pi, _bc in _r.get("moved", []):
                     if _oc == _cn:
-                        _sug_redist.append(f"Mover {_pi['proj'][:25]} → {_bc.split()[0]} {_bc.split()[-1]}")
+                        _sug_redist.append(f"↗ Mover '{_pi['proj'][:20]}' para {_bc.split()[0]} {_bc.split()[-1]}")
                     if _bc == _cn:
-                        _sug_redist.append(f"Receber {_pi['proj'][:25]} de {_oc.split()[0]}")
+                        _sug_redist.append(f"↙ Receber '{_pi['proj'][:20]}' de {_oc.split()[0]}")
                 if _r.get("hire",0) > 0 and _cn in [c for c,_ in _r.get("overloaded",[])]:
-                    _sug_hire.append(f"Contratar {_r['hire']} {_mod}")
+                    _sug_hire.append(f"🔴 Contratar {_r['hire']} consultor(es) {_mod} — sem candidato")
+            _sug_final = " · ".join(_sug_redist) if _sug_redist else ""
+            if _sug_hire and not _sug_redist: _sug_final = " · ".join(_sug_hire)
+            elif _sug_hire: _sug_final += " · " + " · ".join(_sug_hire)
+            if not _sug_final:
+                if _slots > _MAX: _sug_final = "🔴 Sem candidato — indicar contratação"
+                elif _free > 0:  _sug_final = "✅ Disponível para absorver projetos"
+                else:            _sug_final = "—"
 
             # Vagas in modules this consultant covers
             _vagas_mods = sum(_vaga_dem.get(_m, 0) for _m in _mods_list)
@@ -1741,7 +1748,7 @@ with tab5:
                 "Slots":           round(_slots, 1),
                 "Slots livres":    round(_free, 1),
                 "Status":          _status,
-                "Sugestão":        " · ".join(_sug_redist + _sug_hire) or "—",
+                "Sugestão":        _sug_final,
                 "Vagas no módulo": round(_vagas_mods, 1),
             })
 

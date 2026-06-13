@@ -169,8 +169,10 @@ def load_data(file_bytes: bytes):
         fase        = str(fase_raw).strip() if fase_raw is not None and pd.notna(fase_raw) else "—"
         comp_raw    = row.get("Complexidade", None)
         complexidade = str(comp_raw).strip() if comp_raw is not None and pd.notna(comp_raw) else "Média"
-        ded_raw     = row.get("Peso Dedicação", None)
+        ded_raw     = row.get("Peso Dedicação Principal", row.get("Peso Dedicação", None))
         dedicacao   = float(ded_raw) if ded_raw is not None and pd.notna(ded_raw) else 1.0
+        ded_sombra_raw = row.get("Peso Dedicação Sombra", None)
+        dedicacao_sombra = float(ded_sombra_raw) if ded_sombra_raw is not None and pd.notna(ded_sombra_raw) else 0.4
 
 
         # Principal consultant(s)
@@ -189,7 +191,7 @@ def load_data(file_bytes: bytes):
             if not name or name.lower() == "nan": continue
             rows.append({"Projeto": projeto, "Módulo": perfil, "Consultor": name,
                          "Email": email, "Cliente": client, "GoLive": golive,
-                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase, "Complexidade": complexidade, "Peso Dedicação": dedicacao})
+                         "Senioridade": senioridade, "Papel": "Sombra", "Fase": fase, "Complexidade": complexidade, "Peso Dedicação": dedicacao_sombra})
 
         # Vaga: no principal assigned
         if not split_consultants(raw_prin) and perfil not in ("", "nan"):
@@ -1515,23 +1517,36 @@ with tab5:
             k = p.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if p else ""
             return _ALIAS.get(k, k)
 
-        # Consultant slots + projects
+        # Consultant slots + projects — include both Principal and Sombra
         _cslots = {}
         _cprojs = {}
         _cjr    = {}
         for _, _r in df1.iterrows():
-            _c    = _r.get("Consultor","")
             _comp = str(_r.get("Complexidade","Média")).strip()
-            _ded  = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
             _proj = _r.get("Projeto","")
             _perf = _r.get("Módulo","")
             _sen  = str(_r.get("Senioridade","")).strip().lower()
-            _s    = _SLOTS.get(_comp,1.5) * _ded
-            if not _c or str(_c)=="nan": continue
-            _cslots[_c] = _cslots.get(_c,0) + _s
-            _cjr[_c]    = (_sen=="junior")
-            if _c not in _cprojs: _cprojs[_c] = []
-            _cprojs[_c].append({"proj":_proj,"slots":_s,"comp":_comp,"ded":_ded,"perf":_perf})
+            _papel = str(_r.get("Papel","")).strip()
+
+            # Principal
+            _c   = _r.get("Consultor","")
+            _ded = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
+            _s   = _SLOTS.get(_comp,1.5) * _ded
+            if _c and str(_c) != "nan":
+                _cslots[_c] = _cslots.get(_c,0) + _s
+                _cjr[_c]    = (_sen=="junior")
+                if _c not in _cprojs: _cprojs[_c] = []
+                _cprojs[_c].append({"proj":_proj,"slots":_s,"comp":_comp,"ded":_ded,"perf":_perf,"papel":"Principal"})
+
+            # Sombra — use Peso Dedicação Sombra
+            # Find sombra from df1 by matching Consultor from Papel==Sombra rows
+            if _papel == "Sombra":
+                _ded_s = float(_r.get("Peso Dedicação",0.4)) if pd.notna(_r.get("Peso Dedicação")) else 0.4
+                _s_s   = _SLOTS.get(_comp,1.5) * _ded_s
+                if _c and str(_c) != "nan":
+                    _cslots[_c] = _cslots.get(_c,0) + _s_s
+                    if _c not in _cprojs: _cprojs[_c] = []
+                    _cprojs[_c].append({"proj":_proj,"slots":_s_s,"comp":_comp,"ded":_ded_s,"perf":_perf,"papel":"Sombra"})
 
         # Module membership — join by email to handle name mismatches
         # Build email → canonical name from df1 (cockpit names are authoritative)

@@ -1689,6 +1689,93 @@ with tab5:
 
         _export_df = pd.DataFrame(_export_rows)
 
+        # ── Visão por Posição / Vaga ────────────────────────────
+        st.markdown('<div class="section-title">📋 Posições em Aberto — Indicativo por Vaga</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
+            "Para cada perfil sem consultor no Cockpit: redistribuição quando há candidato disponível, "
+            "contratação quando não há."
+            "</div>", unsafe_allow_html=True,
+        )
+
+        # Build per-vacancy view
+        _vaga_rows_html = ""
+        _n_redist_v = 0
+        _n_hire_v   = 0
+
+        for _, _vr in df_vagas.iterrows():
+            _perf  = str(_vr.get("Perfil","")).strip()
+            _proj  = str(_vr.get("Projeto","")).strip()
+            _cli   = str(_vr.get("Cliente","")).strip()
+            _fase  = str(_vr.get("Fase","")).strip() if pd.notna(_vr.get("Fase","")) else "—"
+            _comp  = str(_vr.get("Complexidade","Média")).strip() if pd.notna(_vr.get("Complexidade","")) else "Média"
+            _ded   = float(_vr.get("Peso Dedicação",1.0)) if pd.notna(_vr.get("Peso Dedicação",1.0)) else 1.0
+            _sv    = _SLOTS.get(_comp,1.5) * _ded
+            _proj_short = _proj.split(" - ",1)[1].strip() if " - " in _proj else _proj[:35]
+
+            # Find candidates for each module in this perfil
+            _candidates = []
+            for _pm in _perf.split(";"):
+                _mod = _mk(_pm.strip())
+                _mod_cons = [c for c,mods in _cmods.items() if _mod in mods]
+                for _fc in _mod_cons:
+                    _free = _MAX - _ws.get(_fc, _cslots.get(_fc,0))
+                    if _free >= _sv and not _cjr.get(_fc, False):
+                        _candidates.append((_fc, _free, _mod))
+
+            # Deduplicate by name, keep highest free
+            _seen = {}
+            for _fc, _fr, _m in _candidates:
+                if _fc not in _seen or _fr > _seen[_fc][0]:
+                    _seen[_fc] = (_fr, _m)
+            _candidates = sorted(_seen.items(), key=lambda x: -x[1][0])[:3]
+
+            if _candidates:
+                _n_redist_v += 1
+                _cand_html = " · ".join(
+                    f"<b>{c.split()[0]} {c.split()[-1]}</b> ({fr:.1f}sl livres)"
+                    for c,(fr,_) in _candidates
+                )
+                _action_html = f"<span style='color:#166534;font-weight:600;'>♻️ Redistribuir</span> — {_cand_html}"
+                _bg = "#f0fdf4"
+                _border = "#10b981"
+            else:
+                _n_hire_v += 1
+                _action_html = "<span style='color:#ef4444;font-weight:600;'>🔴 Contratar</span> — sem candidato disponível"
+                _bg = "#fef2f2"
+                _border = "#ef4444"
+
+            _fase_b = {"Realize":"🟢","Prepare":"🔵","Explore":"🟡"}.get(_fase,"")
+            _vaga_rows_html += (
+                f"<tr style='border-bottom:1px solid #f1f5f9;background:{_bg}08;'>"
+                f"<td style='padding:5px 10px;font-size:.78rem;color:#1e293b;'>{_fase_b} {_proj_short}</td>"
+                f"<td style='padding:5px 10px;font-size:.78rem;color:#475569;'>{_perf}</td>"
+                f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{_comp} ×{_ded}</td>"
+                f"<td style='padding:5px 10px;font-size:.78rem;'>{_action_html}</td>"
+                f"</tr>"
+            )
+
+        # Summary KPIs for this view
+        _vc1, _vc2 = st.columns(2)
+        _vc1.metric("♻️ Redistribuições possíveis", _n_redist_v)
+        _vc2.metric("🔴 Indicativo de contratação", _n_hire_v)
+
+        if _vaga_rows_html:
+            st.markdown(
+                "<div style='overflow-x:auto;'>"
+                "<table style='width:100%;border-collapse:collapse;'>"
+                "<thead><tr style='background:#f8fafc;'>"
+                "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Projeto</th>"
+                "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Perfil</th>"
+                "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Comp × Ded</th>"
+                "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Indicativo</th>"
+                f"</tr></thead><tbody>{_vaga_rows_html}</tbody></table></div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.success("Nenhuma vaga em aberto encontrada.")
+
         # ── Visão de Slots por Consultor ─────────────────────────
         st.markdown('<div class="section-title">📊 Slots por Consultor</div>',
                     unsafe_allow_html=True)

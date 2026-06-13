@@ -1729,93 +1729,75 @@ with tab5:
                 }
             )
 
-        # ── Visão de Slots por Projeto e Consultor ───────────────
-        st.markdown('<div class="section-title">📊 Slots por Projeto e Consultor</div>',
+        # ── Visão de Slots por Consultor ─────────────────────────
+        st.markdown('<div class="section-title">📊 Slots por Consultor</div>',
                     unsafe_allow_html=True)
         st.markdown(
             "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Cada ■ = 1 slot (escala 0-3). "
-            "🟥 Principal &nbsp;🟧 Sombra. "
-            "Coluna Total = carga total do consultor em todos os projetos."
+            "Cada ■ = 0.3 slots. Capacidade máxima = 3 slots (10 blocos). "
+            "🟥 Acima do limite &nbsp;🟧 No limite &nbsp;🟢 Disponível."
             "</div>", unsafe_allow_html=True,
         )
 
-        _slot_rows = []
+        # Build total slots per consultant from df1
+        _cs2 = {}
+        _cm2 = {}
         for _, _r in df1.iterrows():
-            _comp  = str(_r.get("Complexidade","Média")).strip()
-            _proj  = str(_r.get("Projeto","")).strip()
-            _perf  = str(_r.get("Módulo","")).strip()
-            _fase  = str(_r.get("Fase","")).strip()
-            _papel = str(_r.get("Papel","")).strip()
-            _c     = _r.get("Consultor","")
+            _c    = _r.get("Consultor","")
             _ded_key = "Peso Dedicação Principal" if "Peso Dedicação Principal" in df1.columns else "Peso Dedicação"
-            _ded   = float(_r.get(_ded_key,1.0)) if pd.notna(_r.get(_ded_key)) else 1.0
-            if not _proj or _proj=="nan" or not _c or str(_c)=="nan": continue
-            _s = _SLOTS.get(_comp,1.5) * _ded
-            _slot_rows.append({"Projeto":_proj,"Fase":_fase,"Perfil":_perf,
-                                "Consultor":_c,"Papel":_papel,"Comp":_comp,
-                                "Ded":_ded,"Slots":round(_s,2)})
+            _ded  = float(_r.get(_ded_key,1.0)) if pd.notna(_r.get(_ded_key)) else 1.0
+            _comp = str(_r.get("Complexidade","Média")).strip()
+            _mod  = str(_r.get("Módulo","")).strip()
+            _s    = _SLOTS.get(_comp,1.5) * _ded
+            if not _c or str(_c)=="nan": continue
+            _cs2[_c] = _cs2.get(_c,0) + _s
+            if _c not in _cm2: _cm2[_c] = set()
+            if _mod: _cm2[_c].add(_mod.replace("Consultor","").strip().split()[0])
 
-        if _slot_rows:
-            _sdf  = pd.DataFrame(_slot_rows)
-            _tot  = _sdf.groupby("Consultor")["Slots"].sum().to_dict()
+        def _bar2(slots, mx=3.0):
+            pct = min(slots/mx, 2.0)
+            n   = min(int(round(pct*10)), 20)
+            if slots > mx:    col = "#ef4444"; flag = "🔴"
+            elif slots >= mx*0.9: col = "#f97316"; flag = "🟡"
+            else:             col = "#10b981"; flag = "🟢"
+            blocks = (f"<span style='color:{col};letter-spacing:1px;font-size:.85rem;'>"
+                     + "■"*min(n,10) + "</span>"
+                     + (f"<span style='color:#ef4444;letter-spacing:1px;font-size:.85rem;'>"
+                        + "■"*(n-10) + "</span>" if n > 10 else "")
+                     + f"<span style='color:#e2e8f0;letter-spacing:1px;font-size:.85rem;'>"
+                     + "□"*max(0,10-min(n,10)) + "</span>")
+            return blocks, f"{slots:.1f}", flag, col
 
-            def _bar(slots, papel, mx=3.0):
-                n = min(int(round(slots/mx*10)), 10)
-                c = "#ef4444" if papel=="Principal" else "#f97316"
-                return (f"<span style='color:{c};letter-spacing:1px;'>"
-                        + "■"*n + "</span>"
-                        + f"<span style='color:#e2e8f0;letter-spacing:1px;'>"
-                        + "□"*(10-n) + "</span>"
-                        + f" <span style='font-size:.72rem;color:#64748b;'>{slots:.1f}</span>")
+        _tbody2 = ""
+        for _cn, _sl in sorted(_cs2.items(), key=lambda x: -x[1]):
+            _blocks, _slabel, _flag, _col = _bar2(_sl)
+            _mlist = ", ".join(sorted(_cm2.get(_cn,set()))[:5])
+            _tbody2 += (
+                f"<tr style='border-bottom:1px solid #f8fafc;'>"
+                f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;white-space:nowrap;'>"
+                f"{_cn.split()[0]} {_cn.split()[-1]}</td>"
+                f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{_mlist}</td>"
+                f"<td style='padding:5px 10px;'>{_blocks}</td>"
+                f"<td style='padding:5px 10px;font-weight:700;font-size:.82rem;color:{_col};'>"
+                f"{_slabel} {_flag}</td>"
+                f"</tr>")
 
-            def _tot_bar(tot, mx=3.0):
-                pct  = min(tot/mx, 2.0)
-                n    = min(int(round(pct*5)), 10)
-                col  = "#ef4444" if tot>mx else "#f97316" if tot>=mx*0.9 else "#10b981"
-                flag = " 🔴" if tot>mx else ""
-                return (f"<span style='color:{col};letter-spacing:1px;'>"
-                        + "■"*n + "</span>"
-                        + f"<span style='color:#e2e8f0;letter-spacing:1px;'>"
-                        + "□"*(10-n) + "</span>"
-                        + f" <span style='font-size:.72rem;color:{col};font-weight:600;'>{tot:.1f}{flag}</span>")
+        st.markdown(
+            "<div style='overflow-x:auto;'>"
+            "<table style='width:100%;border-collapse:collapse;'>"
+            "<thead><tr style='background:#f8fafc;'>"
+            "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Consultor</th>"
+            "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Módulos</th>"
+            "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Slots ocupados</th>"
+            "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Total</th>"
+            f"</tr></thead><tbody>{_tbody2}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
 
-            for _p, _f in _sdf.drop_duplicates("Projeto")[["Projeto","Fase"]].values:
-                _pr    = _sdf[_sdf["Projeto"]==_p]
-                _pname = _p.split(" - ",1)[1].strip() if " - " in _p else _p[:40]
-                _fb    = {"Realize":"🟢","Prepare":"🔵","Explore":"🟡"}.get(_f,"")
-                st.markdown(
-                    f"<div style='font-weight:600;color:#1e293b;font-size:.88rem;"
-                    f"margin:1rem 0 .3rem;border-left:3px solid #f97316;padding-left:.6rem;'>"
-                    f"{_fb} {_pname}</div>", unsafe_allow_html=True)
-                _tbody = ""
-                for _, _row in _pr.iterrows():
-                    _pb = "🟥" if _row["Papel"]=="Principal" else "🟧"
-                    _tbody += (
-                        f"<tr style='border-bottom:1px solid #f8fafc;'>"
-                        f"<td style='padding:3px 8px;font-size:.75rem;color:#475569;'>{_pb} {_row['Perfil'][:22]}</td>"
-                        f"<td style='padding:3px 8px;font-size:.75rem;color:#1e293b;white-space:nowrap;'>"
-                        f"{_row['Consultor'].split()[0]} {_row['Consultor'].split()[-1]}</td>"
-                        f"<td style='padding:3px 8px;'>{_bar(_row['Slots'],_row['Papel'])}</td>"
-                        f"<td style='padding:3px 8px;font-size:.72rem;color:#94a3b8;'>"
-                        f"{_row['Comp']} ×{_row['Ded']}</td>"
-                        f"<td style='padding:3px 8px;'>{_tot_bar(_tot.get(_row['Consultor'],0))}</td>"
-                        f"</tr>")
-                st.markdown(
-                    "<table style='width:100%;border-collapse:collapse;margin-bottom:.5rem;'>"
-                    "<thead><tr style='background:#f8fafc;'>"
-                    "<th style='padding:4px 8px;text-align:left;font-size:.7rem;color:#64748b;font-weight:600;'>Perfil</th>"
-                    "<th style='padding:4px 8px;text-align:left;font-size:.7rem;color:#64748b;font-weight:600;'>Consultor</th>"
-                    "<th style='padding:4px 8px;text-align:left;font-size:.7rem;color:#64748b;font-weight:600;'>Slots neste projeto</th>"
-                    "<th style='padding:4px 8px;text-align:left;font-size:.7rem;color:#64748b;font-weight:600;'>Comp × Ded</th>"
-                    "<th style='padding:4px 8px;text-align:left;font-size:.7rem;color:#64748b;font-weight:600;'>Total do consultor</th>"
-                    f"</tr></thead><tbody>{_tbody}</tbody></table>",
-                    unsafe_allow_html=True)
-
-            # Summary by module: hiring need + open vacancies
-            st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
-            _mod_summary = []
-            for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
+        # Summary by module: hiring need + open vacancies
+        st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
+        _mod_summary = []
+        for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
                 _mod_summary.append({
                     "Módulo":        _mod,
                     "Sobrecarregados": len(_r["overloaded"]),
@@ -1824,9 +1806,9 @@ with tab5:
                     "Gap total":     _r["total_gap"],
                     "Contratar":     _r["hire"],
                 })
-            _mod_df = pd.DataFrame(_mod_summary)[["Módulo","Contratar"]]
-            _mod_df = _mod_df[_mod_df["Contratar"] > 0].reset_index(drop=True)
-            st.dataframe(
+        _mod_df = pd.DataFrame(_mod_summary)[["Módulo","Contratar"]]
+        _mod_df = _mod_df[_mod_df["Contratar"] > 0].reset_index(drop=True)
+        st.dataframe(
                 _mod_df,
                 use_container_width=True,
                 hide_index=True,
@@ -1834,7 +1816,7 @@ with tab5:
                     "Módulo":    st.column_config.TextColumn("Módulo",   width="medium"),
                     "Contratar": st.column_config.NumberColumn("Contratar", width="small"),
                 }
-            )
+        )
 
         # Vagas abertas
         if not df_hiring.empty:
@@ -1849,9 +1831,7 @@ with tab5:
                         f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>🔎 {_hrow['Perfil']}</div>"
                         f"</div>", unsafe_allow_html=True,
                     )
-
-
-# ───────────────────────────────────────────────────────────────
+                                    # ───────────────────────────────────────────────────────────────
 # TAB 5 – Go Lives
 # ───────────────────────────────────────────────────────────────
 with tab2:

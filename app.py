@@ -1694,14 +1694,13 @@ with tab5:
             _ded_vals = [p["ded"] for p in _cprojs.get(_cn, [])]
             _ded_media = round(sum(_ded_vals)/len(_ded_vals), 2) if _ded_vals else 1.0
             _rec_rows.append({
-                "Consultor":       _cn,
-                "Módulos":         ", ".join(_mods_list),
-                "Capacidade":      _MAX,
-                "Slots":           round(_slots, 1),
-                "Slots livres":    round(_free, 1),
-                "Dedicação média": _ded_media,
-                "Status":          _status,
-                "Sugestão":         _sug,
+            _rec_rows.append({
+                "Consultor":    _cn,
+                "Módulos":      ", ".join(_mods_list),
+                "Slots":        round(_slots, 1),
+                "Slots livres": round(_free, 1),
+                "Status":       _status,
+            })
             })
 
         _rec_df = pd.DataFrame(_rec_rows)
@@ -1735,18 +1734,15 @@ with tab5:
                     "Gap total":     _r["total_gap"],
                     "Contratar":     _r["hire"],
                 })
-            _mod_df = pd.DataFrame(_mod_summary)
+            _mod_df = pd.DataFrame(_mod_summary)[["Módulo","Contratar"]]
+            _mod_df = _mod_df[_mod_df["Contratar"] > 0].reset_index(drop=True)
             st.dataframe(
                 _mod_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Módulo":          st.column_config.TextColumn("Módulo",          width="small"),
-                    "Sobrecarregados": st.column_config.NumberColumn("Sobrecarregados",width="small"),
-                    "Redistribuições": st.column_config.NumberColumn("Redistribuições",width="small"),
-                    "Vagas (slots)":   st.column_config.NumberColumn("Vagas (slots)",  width="small", format="%.1f"),
-                    "Gap total":       st.column_config.NumberColumn("Gap total",       width="small", format="%.1f"),
-                    "Contratar":       st.column_config.NumberColumn("Contratar",       width="small"),
+                    "Módulo":    st.column_config.TextColumn("Módulo",   width="medium"),
+                    "Contratar": st.column_config.NumberColumn("Contratar", width="small"),
                 }
             )
 

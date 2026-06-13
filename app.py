@@ -195,7 +195,10 @@ def load_data(file_bytes: bytes):
 
         # Vaga: no principal assigned
         if not split_consultants(raw_prin) and perfil not in ("", "nan"):
-            vagas_rows.append({"Projeto": projeto, "Perfil": perfil, "Cliente": client, "Fase": fase})
+            for _pm in [m.strip() for m in perfil.split(";") if m.strip()]:
+                vagas_rows.append({"Projeto": projeto, "Perfil": _pm, "Cliente": client,
+                                   "Fase": fase, "Complexidade": complexidade,
+                                   "Peso Dedicação": dedicacao})
 
     df1 = pd.DataFrame(rows).drop_duplicates()
 
@@ -1511,11 +1514,14 @@ with tab5:
         import math as _math, copy as _copy
         _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
         _MAX   = 3.0
-        _ALIAS = {"AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI","Custeio":"CO","SAC":"SD","Planning":"SD"}
-
+        _ALIAS = {
+            "AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI",
+            "Custeio":"CO","SERVIÇO":"PS","SAC Planning":"SD",
+            "AVALARA":"AVARALA","Group Report":"Group Reporting",
+        }
         def _mk(p):
-            k = p.replace("Consultor","").replace("de","").replace("Jr.","").strip().split()[0] if p else ""
-            return _ALIAS.get(k, k)
+            p = p.strip()
+            return _ALIAS.get(p, p)
 
         # Consultant slots + projects — include both Principal and Sombra
         _cslots = {}
@@ -1548,38 +1554,50 @@ with tab5:
                     if _c not in _cprojs: _cprojs[_c] = []
                     _cprojs[_c].append({"proj":_proj,"slots":_s_s,"comp":_comp,"ded":_ded_s,"perf":_perf,"papel":"Sombra"})
 
-        # Module membership — join by email to handle name mismatches
-        # Build email → canonical name from df1 (cockpit names are authoritative)
+        # Module membership — join by email, seniority from recursos
         _email_to_name = {}
         for _, _r in df1.iterrows():
             _c = str(_r.get("Consultor","")).strip()
             _e = str(_r.get("Email","")).strip().lower()
             if _c and _e and _c != "nan": _email_to_name[_e] = _c
 
+        # Also build email→seniority from recursos
+        _email_to_senior = {}
+        for _, _rr in df_rec.iterrows():
+            _em = str(_rr.get("Email","")).strip().lower()
+            _sr = str(_rr.get("Senioridade","")).strip().lower()
+            if _em: _email_to_senior[_em] = _sr
+
         _cmods = {}
         for _, _rr in df_rec.iterrows():
-            _em  = str(_rr.get("Email","")).strip().lower()
-            _cn  = _rr.get("Consultor","")
-            _sr  = str(_rr.get("Senioridade","")).strip().lower()
-            # Use cockpit name if email matches, otherwise use recursos name
+            _em   = str(_rr.get("Email","")).strip().lower()
+            _cn   = _rr.get("Consultor","")
+            _sr   = str(_rr.get("Senioridade","")).strip().lower()
             _canon = _email_to_name.get(_em) or str(_cn).strip()
             if not _canon or _canon == "nan": continue
             _cjr[_canon] = (_sr == "junior")
             for _m in (_rr.get("Especialidades") or []):
+                _m_mapped = _ALIAS.get(_m.strip(), _m.strip())
                 if _canon not in _cmods: _cmods[_canon] = set()
-                _cmods[_canon].add(_m)
+                _cmods[_canon].add(_m_mapped)
+
+        # Also enrich cjr with seniority from recursos via email
+        for _, _r in df1.iterrows():
+            _c = str(_r.get("Consultor","")).strip()
+            _e = str(_r.get("Email","")).strip().lower()
+            if _c and _e and _e in _email_to_senior:
+                _cjr[_c] = (_email_to_senior[_e] == "junior")
 
         # Open vacancy demand by module
         _vaga_dem = {}
         for _, _r in df_vagas.iterrows():
-            _perf = _r.get("Perfil","")
-            _proj = _r.get("Projeto","")
-            _cr   = df1[df1["Projeto"]==_proj]["Complexidade"] if "Complexidade" in df1.columns else pd.Series(["Média"])
-            _dr   = df1[df1["Projeto"]==_proj]["Peso Dedicação"] if "Peso Dedicação" in df1.columns else pd.Series([1.0])
-            _comp = _cr.iloc[0] if not _cr.empty else "Média"
-            _ded  = float(_dr.iloc[0]) if not _dr.empty and pd.notna(_dr.iloc[0]) else 1.0
-            _mod  = _mk(_perf)
-            if _mod: _vaga_dem[_mod] = _vaga_dem.get(_mod,0) + _SLOTS.get(_comp,1.5)*_ded
+            _perf = str(_r.get("Perfil","")).strip()
+            _comp = str(_r.get("Complexidade","Média")).strip() if pd.notna(_r.get("Complexidade","")) else "Média"
+            _ded  = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação",1.0)) else 1.0
+            _sv   = _SLOTS.get(_comp,1.5) * _ded
+            for _pm in _perf.split(";"):
+                _mod = _mk(_pm.strip())
+                if _mod: _vaga_dem[_mod] = _vaga_dem.get(_mod,0) + _sv
 
         # Iterative project-based model
         _ws = _copy.copy(_cslots)
@@ -1671,70 +1689,12 @@ with tab5:
 
         _export_df = pd.DataFrame(_export_rows)
 
-        # ── Tabela por Recurso ───────────────────────────────────
-        st.markdown('<div class="section-title">👤 Visão por Recurso</div>', unsafe_allow_html=True)
-
-        _rec_rows = []
-        for _cn, _slots in sorted(_cslots.items(), key=lambda x: -x[1]):
-            _mods_list = sorted(_cmods.get(_cn, set()))
-            _free      = max(0, _MAX - _slots)
-            _status    = "🔴 Sobrecarregado" if _slots > _MAX else ("🟡 No limite" if _slots >= _MAX*0.9 else "🟢 Disponível")
-
-            # Sugestão — simplificada
-            _can_redist  = any(_bc == _cn for _,_r in _cap_results.items() for _,_,_bc in _r.get("moved",[]))
-            _need_redist = any(_oc == _cn for _,_r in _cap_results.items() for _oc,_,_ in _r.get("moved",[]))
-            _need_hire   = any(_cn in [c for c,_ in _r.get("overloaded",[])] and _r.get("hire",0) > 0
-                               for _r in _cap_results.values())
-
-            if _need_redist and _need_hire:
-                _sug = "♻️ Redistribuir parcial · 🔴 Contratar"
-            elif _need_redist:
-                _sug = "♻️ Possível redistribuir"
-            elif _need_hire:
-                _sug = "🔴 Contratar — sem candidato"
-            elif _can_redist:
-                _sug = "✅ Pode absorver redistribuição"
-            elif _free > 0:
-                _sug = "✅ Disponível"
-            else:
-                _sug = "—"
-
-            # Vagas count: number of open vacancies in consultant's modules
-            _n_vagas = sum(
-                1 for _, _r in df_vagas.iterrows()
-                if any(_mk(_r.get("Perfil","")) == _m for _m in _mods_list)
-            )
-
-
-            _rec_rows.append({
-                "Consultor":    _cn,
-                "Módulos":      ", ".join(_mods_list),
-                "Slots":        round(_slots, 1),
-                "Slots livres": round(_free, 1),
-                "Status":       _status,
-            })
-
-        _rec_df = pd.DataFrame(_rec_rows)
-        if not _rec_df.empty:
-            st.dataframe(
-                _rec_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Consultor":    st.column_config.TextColumn("Consultor",    width="medium"),
-                    "Módulos":      st.column_config.TextColumn("Módulos",      width="medium"),
-                    "Slots":        st.column_config.NumberColumn("Slots ocup.",width="small", format="%.1f"),
-                    "Slots livres": st.column_config.NumberColumn("Slots livres",width="small", format="%.1f"),
-                    "Status":       st.column_config.TextColumn("Status",       width="medium"),
-                }
-            )
-
         # ── Visão de Slots por Consultor ─────────────────────────
         st.markdown('<div class="section-title">📊 Slots por Consultor</div>',
                     unsafe_allow_html=True)
         st.markdown(
             "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Cada ■ = 0.3 slots. Capacidade máxima = 3 slots (10 blocos). "
+            "Cada ■ = 1 slot. Capacidade máxima = 3 slots. Blocos extras em vermelho = sobrecarga. "
             "🟥 Acima do limite &nbsp;🟧 No limite &nbsp;🟢 Disponível."
             "</div>", unsafe_allow_html=True,
         )
@@ -1755,17 +1715,20 @@ with tab5:
             if _mod: _cm2[_c].add(_mod.replace("Consultor","").strip().split()[0])
 
         def _bar2(slots, mx=3.0):
-            pct = min(slots/mx, 2.0)
-            n   = min(int(round(pct*10)), 20)
+            # 3 blocks = max capacity. Each block = 1 slot.
+            # If overloaded, show extra red blocks beyond 3
+            n_normal = min(int(round(slots)), 3)
+            n_over   = max(0, int(round(slots)) - 3)
+            n_free   = max(0, 3 - n_normal)
             if slots > mx:    col = "#ef4444"; flag = "🔴"
             elif slots >= mx*0.9: col = "#f97316"; flag = "🟡"
             else:             col = "#10b981"; flag = "🟢"
-            blocks = (f"<span style='color:{col};letter-spacing:1px;font-size:.85rem;'>"
-                     + "■"*min(n,10) + "</span>"
-                     + (f"<span style='color:#ef4444;letter-spacing:1px;font-size:.85rem;'>"
-                        + "■"*(n-10) + "</span>" if n > 10 else "")
-                     + f"<span style='color:#e2e8f0;letter-spacing:1px;font-size:.85rem;'>"
-                     + "□"*max(0,10-min(n,10)) + "</span>")
+            blocks = (f"<span style='color:{col};letter-spacing:2px;font-size:1rem;'>"
+                     + "■"*n_normal + "</span>"
+                     + (f"<span style='color:#ef4444;letter-spacing:2px;font-size:1rem;'>"
+                        + "■"*n_over + "</span>" if n_over > 0 else "")
+                     + f"<span style='color:#e2e8f0;letter-spacing:2px;font-size:1rem;'>"
+                     + "□"*n_free + "</span>")
             return blocks, f"{slots:.1f}", flag, col
 
         _tbody2 = ""

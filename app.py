@@ -1734,11 +1734,14 @@ with tab5:
         _tbody2 = ""
         for _cn, _sl in sorted(_cs2.items(), key=lambda x: -x[1]):
             _blocks, _slabel, _flag, _col = _bar2(_sl)
-            _mlist = ", ".join(sorted(_cm2.get(_cn,set()))[:5])
+            _mlist  = ", ".join(sorted(_cm2.get(_cn,set()))[:5])
+            _is_jr  = _cjr.get(_cn, False)
+            _jr_badge = " <span style='background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 5px;font-size:.65rem;font-weight:600;'>Jr.</span>" if _is_jr else ""
+            _name   = f"{_cn.split()[0]} {_cn.split()[-1]}"
             _tbody2 += (
                 f"<tr style='border-bottom:1px solid #f8fafc;'>"
                 f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;white-space:nowrap;'>"
-                f"{_cn.split()[0]} {_cn.split()[-1]}</td>"
+                f"{_name}{_jr_badge}</td>"
                 f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{_mlist}</td>"
                 f"<td style='padding:5px 10px;'>{_blocks}</td>"
                 f"<td style='padding:5px 10px;font-weight:700;font-size:.82rem;color:{_col};'>"

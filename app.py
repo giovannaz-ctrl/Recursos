@@ -1805,15 +1805,7 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         # ── Visão por Posição / Vaga ────────────────────────────
         st.markdown('<div class="section-title">📋 Posições em Aberto — Indicativo por Vaga</div>',
                     unsafe_allow_html=True)
-        with st.expander("ℹ️ Como a análise funciona", expanded=False):
-            st.markdown("""
-**Redistribuição:**
-> Para cada consultor sobrecarregado (slots > 3), o sistema tenta mover projetos para consultores do mesmo módulo com slots suficientes para absorver o projeto inteiro. Júniores não são opção de redistribuição.
 
-**Contratação:**
-> Gap = projetos que não encontraram candidato para redistribuição + vagas em aberto sem consultor
-> `Contratar = ceil(gap ÷ 3)` — 1 contratação para cada gap de até 3 slots descobertos.
-            """)
 
         # Build per-vacancy view — iterative: deduct slots as candidates are assigned
         _vaga_rows_html = ""
@@ -1907,15 +1899,7 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         # ── Visão de Slots por Consultor ─────────────────────────
         st.markdown('<div class="section-title">📊 Slots por Consultor</div>',
                     unsafe_allow_html=True)
-        with st.expander("ℹ️ Como os slots são calculados", expanded=False):
-            st.markdown("""
-**Cálculo de slots ocupados:**
-> `Slots = Complexidade do projeto × Peso Dedicação`
-> - Alta = 3.0 &nbsp;·&nbsp; Média = 1.5 &nbsp;·&nbsp; Baixa = 1.0
-> - Cada consultor tem capacidade máxima de **3 slots**
 
-🔴 Acima do limite &nbsp;·&nbsp; 🟡 No limite (≥90%) &nbsp;·&nbsp; 🟢 Disponível
-            """)
 
         # Build slot data — grouped by (consultor, projeto) with dedication cap
         _cs2_raw = {}  # {(consultor, projeto): sum_ded}

@@ -174,6 +174,8 @@ def load_data(file_bytes: bytes):
             dedicacao = float(ded_raw) if ded_raw is not None and pd.notna(ded_raw) else 1.0
         except (ValueError, TypeError):
             dedicacao = 1.0
+        # Perfil with ; means consultant handles all modules in same project
+        # Dedication is for the whole project, NOT divided per module
         ded_sombra_raw = row.get("Peso Dedicação Sombra", None)
         try:
             dedicacao_sombra = float(ded_sombra_raw) if ded_sombra_raw is not None and pd.notna(ded_sombra_raw) else 0.4
@@ -1512,43 +1514,64 @@ with tab5:
             p = p.strip()
             return _ALIAS.get(p, p)
 
-        # Consultant slots + projects — include both Principal and Sombra
-        _cslots = {}
-        _cprojs = {}
-        _cjr    = {}
+        # Consultant slots: group by (consultor, projeto, papel) cap dedication at 1.0
+        # Prevents multi-module lines from double-counting the same project
+        _proj_ded  = {}  # {(consultor, projeto, papel): sum_ded}
+        _proj_comp = {}  # {projeto: complexidade}
+        _proj_perf = {}  # {(consultor, projeto, papel): [perfis]}
+        _cjr   = {}
+        _cprojs= {}
+
         for _, _r in df1.iterrows():
-            _comp = str(_r.get("Complexidade","Média")).strip()
-            _proj = _r.get("Projeto","")
-            _perf = _r.get("Módulo","")
-            _sen  = str(_r.get("Senioridade","")).strip().lower()
+            _comp  = str(_r.get("Complexidade","Média")).strip()
+            _proj  = str(_r.get("Projeto","")).strip()
+            _perf  = str(_r.get("Módulo","")).strip()
             _papel = str(_r.get("Papel","")).strip()
+            _c     = _r.get("Consultor","")
+            _sen   = str(_r.get("Senioridade","")).strip().lower()
+            if not _c or str(_c)=="nan" or not _proj or _proj=="nan": continue
+            try:
+                _ded = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
+            except: _ded = 1.0
+            _proj_comp[_proj] = _comp
+            _key = (_c, _proj, _papel)
+            _proj_ded[_key]  = _proj_ded.get(_key, 0) + _ded
+            if _key not in _proj_perf: _proj_perf[_key] = []
+            _proj_perf[_key].append(_perf)
+            _cjr[_c] = (_sen == "junior")
 
-            # Principal
-            _c   = _r.get("Consultor","")
-            _ded = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação")) else 1.0
-            _s   = _SLOTS.get(_comp,1.5) * _ded
-            if _c and str(_c) != "nan":
-                _cslots[_c] = _cslots.get(_c,0) + _s
-                _cjr[_c]    = (_sen=="junior")
-                if _c not in _cprojs: _cprojs[_c] = []
-                _cprojs[_c].append({"proj":_proj,"slots":_s,"comp":_comp,"ded":_ded,"perf":_perf,"papel":"Principal"})
+        # Compute slots per consultant with cap per project
+        _cslots = {}
+        for (_c, _proj, _papel), _sum_ded in _proj_ded.items():
+            _comp  = _proj_comp.get(_proj, "Média")
+            _s     = _SLOTS.get(_comp, 1.5) * min(1.0, _sum_ded)
+            _cslots[_c] = _cslots.get(_c, 0) + _s
+            if _c not in _cprojs: _cprojs[_c] = []
+            _cprojs[_c].append({
+                "proj": _proj, "slots": _s, "comp": _comp,
+                "ded": min(1.0, _sum_ded),
+                "perf": ";".join(_proj_perf[(_c,_proj,_papel)]),
+                "papel": _papel
+            })
 
-            # Sombra — use Peso Dedicação Sombra
-            # Find sombra from df1 by matching Consultor from Papel==Sombra rows
-            if _papel == "Sombra":
-                _ded_s = float(_r.get("Peso Dedicação",0.4)) if pd.notna(_r.get("Peso Dedicação")) else 0.4
-                _s_s   = _SLOTS.get(_comp,1.5) * _ded_s
-                if _c and str(_c) != "nan":
-                    _cslots[_c] = _cslots.get(_c,0) + _s_s
-                    if _c not in _cprojs: _cprojs[_c] = []
-                    _cprojs[_c].append({"proj":_proj,"slots":_s_s,"comp":_comp,"ded":_ded_s,"perf":_perf,"papel":"Sombra"})
+        # Module membership — join by email from both principal and sombra columns
+        import re as _re
+        def _xname(raw): return _re.sub(r'\s*<[^>]+>', '', str(raw)).strip()
+        def _xemail(raw):
+            _m = _re.search(r'<([^>]+)>', str(raw))
+            return _m.group(1).strip().lower() if _m else ""
 
-        # Module membership — join by email, seniority from recursos
         _email_to_name = {}
         for _, _r in df1.iterrows():
+            # Principal
             _c = str(_r.get("Consultor","")).strip()
             _e = str(_r.get("Email","")).strip().lower()
             if _c and _e and _c != "nan": _email_to_name[_e] = _c
+            # Sombra — extract from raw "Consultor secundário" column
+            for _part in str(_r.get("Consultor secundário","") or "").split(","):
+                _cs = _xname(_part.strip())
+                _es = _xemail(_part.strip())
+                if _cs and _es and _cs != "nan": _email_to_name[_es] = _cs
 
         # Also build email→seniority from recursos
         _email_to_senior = {}
@@ -1785,16 +1808,23 @@ with tab5:
 🔴 Acima do limite &nbsp;·&nbsp; 🟡 No limite (≥90%) &nbsp;·&nbsp; 🟢 Disponível
             """)
 
-        # Build slot data
-        _cs2 = {}
+        # Build slot data — grouped by (consultor, projeto) with dedication cap
+        _cs2_raw = {}  # {(consultor, projeto): sum_ded}
+        _cs2_comp= {}  # {projeto: comp}
         for _, _r in df1.iterrows():
             _c    = _r.get("Consultor","")
-            _dk   = "Peso Dedicação Principal" if "Peso Dedicação Principal" in df1.columns else "Peso Dedicação"
-            _ded  = float(_r.get(_dk,1.0)) if pd.notna(_r.get(_dk)) else 1.0
+            _proj = str(_r.get("Projeto","")).strip()
             _comp = str(_r.get("Complexidade","Média")).strip()
-            _s    = _SLOTS.get(_comp,1.5) * _ded
-            if not _c or str(_c)=="nan": continue
-            _cs2[_c] = _cs2.get(_c,0) + _s
+            _dk   = "Peso Dedicação Principal" if "Peso Dedicação Principal" in df1.columns else "Peso Dedicação"
+            try: _ded = float(_r.get(_dk,1.0)) if pd.notna(_r.get(_dk)) else 1.0
+            except: _ded = 1.0
+            if not _c or str(_c)=="nan" or not _proj or _proj=="nan": continue
+            _cs2_comp[_proj] = _comp
+            _cs2_raw[(_c,_proj)] = _cs2_raw.get((_c,_proj), 0) + _ded
+        _cs2 = {}
+        for (_c, _proj), _sum_ded in _cs2_raw.items():
+            _comp = _cs2_comp.get(_proj, "Média")
+            _cs2[_c] = _cs2.get(_c, 0) + _SLOTS.get(_comp,1.5) * min(1.0, _sum_ded)
 
         def _bar2(slots, mx=3.0):
             n_fill = min(int(round(slots)), 3)

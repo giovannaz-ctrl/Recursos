@@ -1500,24 +1500,6 @@ with tab5:
                     unsafe_allow_html=True)
 
         # Legenda do racional
-        with st.expander("ℹ️ Como este cálculo funciona", expanded=False):
-            st.markdown("""
-**Cálculo de slots ocupados:**
-> `Slots = Complexidade do projeto × Peso Dedicação`
-> - Alta = 3.0 · Média = 1.5 · Baixa = 1.0
-> - Cada consultor tem capacidade máxima de **3 slots**
-
-**Redistribuição:**
-> Para cada consultor sobrecarregado (slots > 3), o sistema tenta mover projetos para consultores do mesmo módulo com slots suficientes para absorver o projeto inteiro. Juniores não são opção de redistribuição.
-
-**Contratação:**
-> Gap = projetos que não encontraram candidato para redistribuição + vagas em aberto sem consultor
-> `Contratar = floor(gap ÷ 3)` — arredondado para baixo para não inflar o headcount.
-
-**Peso Dedicação:**
-> Reflete o quanto aquele módulo consome do consultor naquele projeto. Ex: peso 0.4 = participação pontual.
-            """)
-
         import math as _math, copy as _copy
         _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
         _MAX   = 3.0
@@ -1890,6 +1872,45 @@ with tab5:
                 st.markdown(_table_hdr + _make_rows(_juniors) + "</tbody></table></div>", unsafe_allow_html=True)
             else:
                 st.info("Nenhum júnior cadastrado.")
+
+        # ── Resumo por Módulo ──────────────────────────────────────
+        st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
+
+        # Add vacancy-only modules not covered by overload model
+        for _vm, _vslots in _vaga_dem.items():
+            if _vm not in _cap_results and _vslots > 0:
+                _mc_v   = [c for c,mods in _cmods.items() if _vm in mods]
+                _free_v = sum(max(0,_MAX-_cslots.get(c,0)) for c in _mc_v
+                              if _cslots.get(c,0) < _MAX and not _cjr.get(c,False))
+                _gap_v  = max(0, _vslots - _free_v)
+                _hire_v = _math.ceil(_gap_v / _MAX) if _gap_v > 0 else 0
+                if _hire_v > 0:
+                    _cap_results[_vm] = {"overloaded":[],"moved":[],"vaga":round(_vslots,1),
+                                         "remaining":0,"total_gap":round(_gap_v,1),"hire":_hire_v}
+
+        _mod_summary = [{"Módulo": _mod, "Contratar": _r["hire"]}
+                        for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"])
+                        if _r["hire"] > 0]
+        if _mod_summary:
+            _mod_df = pd.DataFrame(_mod_summary)
+            # Recalculate KPIs
+            _total_hire2 = _mod_df["Contratar"].sum()
+            _n_hire2     = len(_mod_df)
+            _n_redist2   = sum(1 for r in _cap_results.values() if r.get("moved"))
+            st.markdown(f"""
+            <div class="kpi-grid">
+                {kpi_html(int(_total_hire2), "Contratar",            "rose")}
+                {kpi_html(int(_n_hire2),     "Módulos com gap",      "amber")}
+                {kpi_html(int(_n_redist2),   "Módulos redistribuir", "green")}
+            </div>
+            """, unsafe_allow_html=True)
+            st.dataframe(_mod_df, use_container_width=True, hide_index=True,
+                column_config={
+                    "Módulo":    st.column_config.TextColumn("Módulo",   width="medium"),
+                    "Contratar": st.column_config.NumberColumn("Contratar", width="small"),
+                })
+        else:
+            st.success("Nenhum gap identificado.")
 
         # Vagas abertas
         if not df_hiring.empty:

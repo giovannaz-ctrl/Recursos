@@ -1502,12 +1502,14 @@ with tab5:
                     unsafe_allow_html=True)
 
         # Help dialog
-        @st.dialog("📐 Modelo de Cálculo — Capacidade e Contratação", width="large")
+        @st.dialog("Método de Análise de Capacidade — Numen Lean Services", width="large")
         def _show_help():
             st.markdown("""
-**Conceito base: Slots**
+## Conceito Base: Slots
 
 Cada consultor tem capacidade máxima de **3 slots**.
+
+O slot de um projeto é calculado assim:
 
 `Slots = Complexidade × Peso Dedicação`
 
@@ -1517,58 +1519,86 @@ Cada consultor tem capacidade máxima de **3 slots**.
 | Média | 1.5 |
 | Baixa | 1.0 |
 
-- Dedicação é **por projeto** — soma de módulos no mesmo projeto é limitada a 1.0 (cap automático)
-- Sombras também consomem slots com seu próprio peso de dedicação
+**Regras importantes:**
+- A dedicação é **por projeto** — se o consultor atende MM e WM na Brasal, a soma das dedicações não pode ultrapassar 1.0 naquele projeto
+- Se a soma ultrapassar 1.0, o modelo aplica automaticamente o cap em 1.0
+- Sombras também consomem slots (com seu próprio peso de dedicação)
 
 ---
 
-**Passo 1 — Carga atual de cada consultor**
+## Passo 1 — Calcular a carga atual de cada consultor
 
-`Carga = Σ (Complexidade × min(1.0, Σ dedicações no projeto))`
+Para cada consultor, agrupa todas as linhas do Cockpit por projeto e soma as dedicações:
+
+`Carga total = Σ (Complexidade × min(1.0, Σ dedicações no projeto))`
+
+**Exemplo — Silvana:**
+
+| Projeto | Módulos | Comp | Ded | Slots |
+|---|---|---|---|---|
+| Brasal | FI | Alta | 0.4 | 1.2 |
+| Airfix | FI | Média | 0.4 | 0.6 |
+| Ademicon | FI | Baixa | 0.4 | 0.4 |
+| ERO | FI+Leasing | Alta | 1.1→cap 1.0 | 3.0 |
+| **Total** | | | | **5.2sl** |
 
 ---
 
-**Passo 2 — Identificar sobrecarregados**
+## Passo 2 — Identificar sobrecarregados
 
 Consultor com slots > 3.0 está sobrecarregado.
-Juniores e consultores originalmente sobrecarregados não entram como candidatos.
+
+- Júniores **não** entram como opção de redistribuição
+- Consultores originalmente sobrecarregados **não** podem receber projetos
 
 ---
 
-**Passo 3 — Redistribuição (modelo iterativo)**
+## Passo 3 — Redistribuição (modelo iterativo)
 
-1. Projetos do sobrecarregado ordenados do maior slot para o menor
-2. Para cada projeto, busca candidato no mesmo módulo que:
-   - Não é júnior
-   - Não estava originalmente sobrecarregado
-   - Tem slots livres suficientes para o projeto **inteiro**
-   - Prioriza quem tem **mais slots livres**
-3. Se encontrou → redistribui e deduz slots imediatamente (evita dupla sugestão)
-4. Se não encontrou → vai para fila de contratação
+Para cada módulo, ordenado do mais sobrecarregado para o menos:
+
+**3.1** Lista os projetos do sobrecarregado, do maior slot para o menor
+
+**3.2** Para cada projeto, busca candidato no mesmo módulo que:
+- Não é júnior
+- Não estava originalmente sobrecarregado
+- Tem slots livres suficientes para o projeto inteiro (`slots livres ≥ slots do projeto`)
+- Prioriza quem tem **mais slots livres** (para preservar flexibilidade)
+
+**3.3** Se encontrou candidato → redistribui e deduz os slots dele imediatamente (iterativo — ele não aparecerá com aquela disponibilidade para o próximo módulo)
+
+**3.4** Se não encontrou → projeto vai para a fila de contratação
 
 ---
 
-**Passo 4 — Contratação**
+## Passo 4 — Contratação
 
 `Gap = excesso não redistribuído + vagas abertas sem consultor`
 
 `Contratar = ceil(Gap ÷ 3)`
 
+Vagas abertas são projetos no Cockpit sem consultor principal — o peso de dedicação da vaga determina o slot necessário.
+
 Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente entre os módulos.
 
 ---
 
-**Resultado por módulo**
+## Resultado por módulo
 
 | Situação | Indicação |
 |---|---|
-| Candidato disponível | ♻️ Redistribuir → indica quem |
-| Redistribuição parcial | ♻️ Parcial + 🔴 Contratar N |
-| Sem candidato | 🔴 Contratar N |
+| Há candidato com slots suficientes | ♻️ Redistribuir → indica quem |
+| Redistribuição parcial + gap restante | ♻️ Redistribuir parcial + 🔴 Contratar N |
+| Nenhum candidato disponível | 🔴 Contratar N |
 
 ---
 
-> ⚠️ **Limitações:** ordem de processamento pode não ser ótima (heurística), não considera Go Lives como carga temporária, não projeta crescimento de carteira.
+## O que o modelo NÃO considera
+
+- Ordem de processamento pode não ser ótima (heurística)
+- Não avalia Go Lives como fator de carga temporária
+- Não projeta crescimento de carteira
+- Vagas abertas sem sombra definida não geram demanda de sombra
             """)
 
         if st.button("❓ Como funciona o modelo", key="help_modelo"):

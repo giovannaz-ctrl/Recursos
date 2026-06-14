@@ -1808,11 +1808,12 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
 
 
         # Build per-vacancy view — iterative: deduct slots as candidates are assigned
-        _vaga_rows_html = ""
-        _n_redist_v = 0
-        _n_hire_v   = 0
+        _redist_rows = []  # rows for redistribution tab
+        _hire_rows   = []  # rows for hiring tab
+        _n_redist_v  = 0
+        _n_hire_v    = 0
 
-        # Working copy of slots for vacancy assignment — starts from original
+        # Working copy of slots for vacancy assignment
         _vws = {c: s for c, s in _cslots.items()}
 
         for _, _vr in df_vagas.iterrows():
@@ -1825,7 +1826,7 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             _sv    = _SLOTS.get(_comp,1.5) * _ded
             _proj_short = _proj.split(" - ",1)[1].strip() if " - " in _proj else _proj[:35]
 
-            # Find candidates for each module in this perfil
+            # Find candidates
             _candidates = []
             for _pm in _perf.split(";"):
                 _mod = _mk(_pm.strip())
@@ -1833,54 +1834,51 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 for _fc in _mod_cons:
                     _cur_slots = _vws.get(_fc, _cslots.get(_fc, 0))
                     _free = _MAX - _cur_slots
-                    # Only suggest if: not originally overloaded AND has enough free slots now
-                    if (_free >= _sv
-                        and not _cjr.get(_fc, False)
-                        and _cslots.get(_fc, 0) <= _MAX):
+                    if (_free >= _sv and not _cjr.get(_fc, False) and _cslots.get(_fc, 0) <= _MAX):
                         _candidates.append((_fc, _free, _mod))
 
-            # Deduplicate by name, keep highest free
             _seen = {}
             for _fc, _fr, _m in _candidates:
                 if _fc not in _seen or _fr > _seen[_fc][0]:
                     _seen[_fc] = (_fr, _m)
             _candidates = sorted(_seen.items(), key=lambda x: -x[1][0])[:3]
 
+            _fase_b = {"Realize":"🟢","Prepare":"🔵","Explore":"🟡"}.get(_fase,"")
+
             if _candidates:
                 _n_redist_v += 1
-                # Deduct slots from best candidate (most free) to prevent double-assignment
                 _best_c, (_best_fr, _best_m) = _candidates[0]
                 _vws[_best_c] = _vws.get(_best_c, _cslots.get(_best_c, 0)) + _sv
                 _cand_html = " · ".join(
                     f"<b>{c.split()[0]} {c.split()[-1]}</b> ({fr:.1f}sl livres)"
                     for c,(fr,_) in _candidates
                 )
-                _action_html = f"<span style='color:#166534;font-weight:600;'>♻️ Redistribuir</span> — {_cand_html}"
-                _bg = "#f0fdf4"
-                _border = "#10b981"
+                _action_html = f"<span style='color:#166634;font-weight:600;'>♻️ Redistribuir</span> — {_cand_html}"
+                _redist_rows.append((f"{_fase_b} {_proj_short}", _perf, f"{_comp} ×{_ded}", f"{_sv:.1f}", _action_html))
             else:
                 _n_hire_v += 1
                 _action_html = "<span style='color:#ef4444;font-weight:600;'>🔴 Contratar</span> — sem candidato disponível"
-                _bg = "#fef2f2"
-                _border = "#ef4444"
+                _hire_rows.append((f"{_fase_b} {_proj_short}", _perf, f"{_comp} ×{_ded}", f"{_sv:.1f}", _action_html))
 
-            _fase_b = {"Realize":"🟢","Prepare":"🔵","Explore":"🟡"}.get(_fase,"")
-            _vaga_rows_html += (
-                f"<tr style='border-bottom:1px solid #f1f5f9;background:{_bg}08;'>"
-                f"<td style='padding:5px 10px;font-size:.78rem;color:#1e293b;'>{_fase_b} {_proj_short}</td>"
-                f"<td style='padding:5px 10px;font-size:.78rem;color:#475569;'>{_perf}</td>"
-                f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{_comp} ×{_ded}</td>"
-                f"<td style='padding:5px 10px;font-size:.82rem;font-weight:700;color:#1e293b;text-align:center;'>{_sv:.1f}</td>"
-                f"<td style='padding:5px 10px;font-size:.78rem;'>{_action_html}</td>"
-                f"</tr>"
-            )
-
-        # Summary KPIs for this view
+        # KPIs
         _vc1, _vc2 = st.columns(2)
         _vc1.metric("♻️ Redistribuições possíveis", _n_redist_v)
         _vc2.metric("🔴 Indicativo de contratação", _n_hire_v)
 
-        if _vaga_rows_html:
+        def _vaga_table(rows):
+            if not rows:
+                st.info("Nenhuma vaga nesta categoria.")
+                return
+            _tbody = "".join(
+                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                f"<td style='padding:5px 10px;font-size:.78rem;color:#1e293b;'>{r[0]}</td>"
+                f"<td style='padding:5px 10px;font-size:.78rem;color:#475569;'>{r[1]}</td>"
+                f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{r[2]}</td>"
+                f"<td style='padding:5px 10px;font-size:.82rem;font-weight:700;color:#1e293b;text-align:center;'>{r[3]}</td>"
+                f"<td style='padding:5px 10px;font-size:.78rem;'>{r[4]}</td>"
+                f"</tr>"
+                for r in rows
+            )
             st.markdown(
                 "<div style='overflow-x:auto;'>"
                 "<table style='width:100%;border-collapse:collapse;'>"
@@ -1890,11 +1888,18 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Comp × Ded</th>"
                 "<th style='padding:6px 10px;text-align:center;font-size:.75rem;color:#64748b;font-weight:600;'>Slots</th>"
                 "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Indicativo</th>"
-                f"</tr></thead><tbody>{_vaga_rows_html}</tbody></table></div>",
+                f"</tr></thead><tbody>{_tbody}</tbody></table></div>",
                 unsafe_allow_html=True,
             )
-        else:
-            st.success("Nenhuma vaga em aberto encontrada.")
+
+        _vtab_r, _vtab_h = st.tabs([
+            f"♻️ Redistribuir ({_n_redist_v})",
+            f"🔴 Contratar ({_n_hire_v})",
+        ])
+        with _vtab_r:
+            _vaga_table(_redist_rows)
+        with _vtab_h:
+            _vaga_table(_hire_rows)
 
         # ── Visão de Slots por Consultor ─────────────────────────
         st.markdown('<div class="section-title">📊 Slots por Consultor</div>',

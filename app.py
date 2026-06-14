@@ -566,7 +566,8 @@ with tab1:
 
     # ── Consultores Júnior ────────────────────────────────────────
     if not dft_junior.empty:
-        st.markdown('<div class="section-title">👶 Consultores Júnior — Apoio nos Projetos</div>',
+        _jr_count = dft_junior['Consultor'].nunique()
+        st.markdown(f'<div class="section-title">👶 Consultores Júnior — Apoio nos Projetos ({_jr_count})</div>',
                     unsafe_allow_html=True)
         _jr_dedup = dft_junior.drop_duplicates(subset=["Consultor","Projeto"])
         jr_df = (
@@ -1785,111 +1786,98 @@ with tab5:
                     unsafe_allow_html=True)
         st.markdown(
             "<div style='font-size:.82rem; color:#64748b; margin-bottom:.8rem;'>"
-            "Cada ■ = 1 slot. Capacidade máxima = 3 slots. Blocos extras em vermelho = sobrecarga. "
-            "🟥 Acima do limite &nbsp;🟧 No limite &nbsp;🟢 Disponível."
+            "Cada ■ = 1 slot. Capacidade máxima = 3 slots. "
+            "🔴 Acima do limite &nbsp;🟡 No limite &nbsp;🟢 Disponível."
             "</div>", unsafe_allow_html=True,
         )
 
-        # Build total slots per consultant from df1
+        # Build slot data
         _cs2 = {}
-        _cm2 = {}
         for _, _r in df1.iterrows():
             _c    = _r.get("Consultor","")
-            _ded_key = "Peso Dedicação Principal" if "Peso Dedicação Principal" in df1.columns else "Peso Dedicação"
-            _ded  = float(_r.get(_ded_key,1.0)) if pd.notna(_r.get(_ded_key)) else 1.0
+            _dk   = "Peso Dedicação Principal" if "Peso Dedicação Principal" in df1.columns else "Peso Dedicação"
+            _ded  = float(_r.get(_dk,1.0)) if pd.notna(_r.get(_dk)) else 1.0
             _comp = str(_r.get("Complexidade","Média")).strip()
-            _mod  = str(_r.get("Módulo","")).strip()
             _s    = _SLOTS.get(_comp,1.5) * _ded
             if not _c or str(_c)=="nan": continue
             _cs2[_c] = _cs2.get(_c,0) + _s
-            if _c not in _cm2: _cm2[_c] = set()
-            if _mod: _cm2[_c].add(_mod.replace("Consultor","").strip().split()[0])
 
         def _bar2(slots, mx=3.0):
-            # 3 blocks = max capacity. Each block = 1 slot.
-            # If overloaded, show extra red blocks beyond 3
-            n_normal = min(int(round(slots)), 3)
-            n_over   = max(0, int(round(slots)) - 3)
-            n_free   = max(0, 3 - n_normal)
-            if slots > mx:    col = "#ef4444"; flag = "🔴"
+            n_fill = min(int(round(slots)), 3)
+            n_over = max(0, int(round(slots)) - 3)
+            n_free = max(0, 3 - n_fill)
+            if slots > mx:        col = "#ef4444"; flag = "🔴"
             elif slots >= mx*0.9: col = "#f97316"; flag = "🟡"
-            else:             col = "#10b981"; flag = "🟢"
-            blocks = (f"<span style='color:{col};letter-spacing:2px;font-size:1rem;'>"
-                     + "■"*n_normal + "</span>"
-                     + (f"<span style='color:#ef4444;letter-spacing:2px;font-size:1rem;'>"
-                        + "■"*n_over + "</span>" if n_over > 0 else "")
-                     + f"<span style='color:#e2e8f0;letter-spacing:2px;font-size:1rem;'>"
-                     + "□"*n_free + "</span>")
+            else:                 col = "#10b981"; flag = "🟢"
+            blocks = (
+                f"<span style='color:{col};letter-spacing:2px;font-size:1rem;'>" + "■"*n_fill + "</span>"
+                + (f"<span style='color:#ef4444;letter-spacing:2px;font-size:1rem;'>" + "■"*n_over + "</span>" if n_over else "")
+                + f"<span style='color:#e2e8f0;letter-spacing:2px;font-size:1rem;'>" + "□"*n_free + "</span>"
+            )
             return blocks, f"{slots:.1f}", flag, col
 
-        _tbody2 = ""
-        for _cn, _sl in sorted(_cs2.items(), key=lambda x: -x[1]):
-            _blocks, _slabel, _flag, _col = _bar2(_sl)
-            _mlist  = ", ".join(sorted(_cm2.get(_cn,set()))[:5])
-            _is_jr  = _cjr.get(_cn, False)
-            _jr_badge = " <span style='background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 5px;font-size:.65rem;font-weight:600;'>Jr.</span>" if _is_jr else ""
-            _name   = f"{_cn.split()[0]} {_cn.split()[-1]}"
-            _tbody2 += (
-                f"<tr style='border-bottom:1px solid #f8fafc;'>"
-                f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;white-space:nowrap;'>"
-                f"{_name}{_jr_badge}</td>"
-                f"<td style='padding:5px 10px;font-size:.72rem;color:#64748b;'>{_mlist}</td>"
-                f"<td style='padding:5px 10px;'>{_blocks}</td>"
-                f"<td style='padding:5px 10px;font-weight:700;font-size:.82rem;color:{_col};'>"
-                f"{_slabel} {_flag}</td>"
-                f"</tr>")
+        def _make_rows(consultant_list):
+            html = ""
+            for _cn in consultant_list:
+                _sl = _cs2.get(_cn, 0)
+                _blocks, _slabel, _flag, _col = _bar2(_sl)
+                _jr_badge = (" <span style='background:#e0e7ff;color:#3730a3;border-radius:3px;"
+                             "padding:1px 5px;font-size:.65rem;font-weight:600;'>Jr.</span>"
+                             if _cjr.get(_cn, False) else "")
+                _name = f"{_cn.split()[0]} {_cn.split()[-1]}"
+                html += (
+                    f"<tr style='border-bottom:1px solid #f8fafc;'>"
+                    f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;white-space:nowrap;'>"
+                    f"{_name}{_jr_badge}</td>"
+                    f"<td style='padding:5px 10px;'>{_blocks}</td>"
+                    f"<td style='padding:5px 10px;font-weight:700;font-size:.82rem;color:{_col};'>"
+                    f"{_slabel} {_flag}</td>"
+                    f"</tr>"
+                )
+            return html
 
-        st.markdown(
+        _table_hdr = (
             "<div style='overflow-x:auto;'>"
             "<table style='width:100%;border-collapse:collapse;'>"
             "<thead><tr style='background:#f8fafc;'>"
             "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Consultor</th>"
-            "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Módulos</th>"
             "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Slots ocupados</th>"
             "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Total</th>"
-            f"</tr></thead><tbody>{_tbody2}</tbody></table></div>",
-            unsafe_allow_html=True,
+            "</tr></thead><tbody>"
         )
 
-        # Summary by module: hiring need + open vacancies
-        st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
-        # Add vacancy-only modules (like Leasing) not covered by overload model
-        for _vm, _vslots in _vaga_dem.items():
-            if _vm not in _cap_results and _vslots > 0:
-                _mc_v  = [c for c,mods in _cmods.items() if _vm in mods]
-                _free_v= sum(max(0,_MAX-_cslots.get(c,0)) for c in _mc_v
-                             if _cslots.get(c,0) < _MAX and not _cjr.get(c,False))
-                _gap_v = max(0, _vslots - _free_v)
-                _hire_v= _math.ceil(_gap_v / _MAX) if _gap_v > 0 else 0
-                if _hire_v > 0:
-                    _cap_results[_vm] = {"overloaded":[],"moved":[],"vaga":round(_vslots,1),
-                                         "remaining":0,"total_gap":round(_gap_v,1),"hire":_hire_v}
-        _mod_summary = []
-        for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
-            _mod_summary.append({"Módulo": _mod, "Contratar": _r["hire"]})
-        _mod_df = pd.DataFrame(_mod_summary)[["Módulo","Contratar"]]
-        _mod_df = _mod_df[_mod_df["Contratar"] > 0].reset_index(drop=True)
-        # Recalculate KPIs after all modules (including vacancy-only) are added
-        _total_hire = sum(r["hire"] for r in _cap_results.values())
-        _n_hire     = sum(1 for r in _cap_results.values() if r["hire"] > 0)
-        _n_redist   = sum(1 for r in _cap_results.values() if r.get("moved"))
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html(_total_hire, "Contratar",            "rose")}
-            {kpi_html(_n_hire,     "Módulos com gap",      "amber")}
-            {kpi_html(_n_redist,   "Módulos redistribuir", "green")}
-        </div>
-        """, unsafe_allow_html=True)
+        # Segment consultants
+        _above  = sorted([c for c,s in _cs2.items() if s > _MAX and not _cjr.get(c,False)], key=lambda c: -_cs2[c])
+        _at_lim = sorted([c for c,s in _cs2.items() if _MAX*0.9 <= s <= _MAX and not _cjr.get(c,False)], key=lambda c: -_cs2[c])
+        _avail  = sorted([c for c,s in _cs2.items() if s < _MAX*0.9 and not _cjr.get(c,False)], key=lambda c: -_cs2[c])
+        _juniors= sorted([c for c,s in _cs2.items() if _cjr.get(c,False)], key=lambda c: -_cs2[c])
 
-        st.dataframe(
-                _mod_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Módulo":    st.column_config.TextColumn("Módulo",   width="medium"),
-                    "Contratar": st.column_config.NumberColumn("Contratar", width="small"),
-                }
-        )
+        _tab_above, _tab_at, _tab_avail, _tab_jr = st.tabs([
+            f"🔴 Acima do limite ({len(_above)})",
+            f"🟡 No limite ({len(_at_lim)})",
+            f"🟢 Disponível ({len(_avail)})",
+            f"👶 Júniores ({len(_juniors)})",
+        ])
+        with _tab_above:
+            if _above:
+                st.markdown(_table_hdr + _make_rows(_above) + "</tbody></table></div>", unsafe_allow_html=True)
+            else:
+                st.success("Nenhum consultor acima do limite.")
+        with _tab_at:
+            if _at_lim:
+                st.markdown(_table_hdr + _make_rows(_at_lim) + "</tbody></table></div>", unsafe_allow_html=True)
+            else:
+                st.success("Nenhum consultor no limite.")
+        with _tab_avail:
+            if _avail:
+                st.markdown(_table_hdr + _make_rows(_avail) + "</tbody></table></div>", unsafe_allow_html=True)
+            else:
+                st.success("Todos os consultores estão alocados.")
+        with _tab_jr:
+            if _juniors:
+                st.markdown(_table_hdr + _make_rows(_juniors) + "</tbody></table></div>", unsafe_allow_html=True)
+            else:
+                st.info("Nenhum júnior cadastrado.")
 
         # Vagas abertas
         if not df_hiring.empty:

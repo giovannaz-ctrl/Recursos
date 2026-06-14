@@ -1864,16 +1864,20 @@ with tab5:
 
         # Summary by module: hiring need + open vacancies
         st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
+        # Add vacancy-only modules (like Leasing) not covered by overload model
+        for _vm, _vslots in _vaga_dem.items():
+            if _vm not in _cap_results and _vslots > 0:
+                _mc_v  = [c for c,mods in _cmods.items() if _vm in mods]
+                _free_v= sum(max(0,_MAX-_cslots.get(c,0)) for c in _mc_v
+                             if _cslots.get(c,0) < _MAX and not _cjr.get(c,False))
+                _gap_v = max(0, _vslots - _free_v)
+                _hire_v= _math.floor(_gap_v / _MAX) if _gap_v > 0 else 0
+                if _hire_v > 0:
+                    _cap_results[_vm] = {"overloaded":[],"moved":[],"vaga":round(_vslots,1),
+                                         "remaining":0,"total_gap":round(_gap_v,1),"hire":_hire_v}
         _mod_summary = []
         for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"]):
-                _mod_summary.append({
-                    "Módulo":        _mod,
-                    "Sobrecarregados": len(_r["overloaded"]),
-                    "Redistribuições": len(_r["moved"]),
-                    "Vagas (slots)": _r["vaga"],
-                    "Gap total":     _r["total_gap"],
-                    "Contratar":     _r["hire"],
-                })
+            _mod_summary.append({"Módulo": _mod, "Contratar": _r["hire"]})
         _mod_df = pd.DataFrame(_mod_summary)[["Módulo","Contratar"]]
         _mod_df = _mod_df[_mod_df["Contratar"] > 0].reset_index(drop=True)
         st.dataframe(

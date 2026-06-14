@@ -1541,18 +1541,21 @@ with tab5:
             _cjr[_c] = (_sen == "junior")
 
         # Compute slots per consultant with cap per project
-        _cslots = {}
+        _cslots = {}          # all slots (principal + sombra) — used for overload detection
+        _cslots_p = {}        # principal-only slots — used for redistribution candidates
         for (_c, _proj, _papel), _sum_ded in _proj_ded.items():
             _comp  = _proj_comp.get(_proj, "Média")
             _s     = _SLOTS.get(_comp, 1.5) * min(1.0, _sum_ded)
             _cslots[_c] = _cslots.get(_c, 0) + _s
-            if _c not in _cprojs: _cprojs[_c] = []
-            _cprojs[_c].append({
-                "proj": _proj, "slots": _s, "comp": _comp,
-                "ded": min(1.0, _sum_ded),
-                "perf": ";".join(_proj_perf[(_c,_proj,_papel)]),
-                "papel": _papel
-            })
+            if _papel == "Principal":
+                _cslots_p[_c] = _cslots_p.get(_c, 0) + _s
+                if _c not in _cprojs: _cprojs[_c] = []
+                _cprojs[_c].append({
+                    "proj": _proj, "slots": _s, "comp": _comp,
+                    "ded": min(1.0, _sum_ded),
+                    "perf": ";".join(_proj_perf[(_c,_proj,_papel)]),
+                    "papel": _papel
+                })
 
         # Module membership — join by email from both principal and sombra columns
         import re as _re
@@ -1601,15 +1604,18 @@ with tab5:
                 _cjr[_c] = (_email_to_senior[_e] == "junior")
 
         # Open vacancy demand by module
+        # For multi-module perfil (PP;QM;PM), count as 1 position split across modules
         _vaga_dem = {}
         for _, _r in df_vagas.iterrows():
             _perf = str(_r.get("Perfil","")).strip()
             _comp = str(_r.get("Complexidade","Média")).strip() if pd.notna(_r.get("Complexidade","")) else "Média"
             _ded  = float(_r.get("Peso Dedicação",1.0)) if pd.notna(_r.get("Peso Dedicação",1.0)) else 1.0
             _sv   = _SLOTS.get(_comp,1.5) * _ded
-            for _pm in _perf.split(";"):
-                _mod = _mk(_pm.strip())
-                if _mod: _vaga_dem[_mod] = _vaga_dem.get(_mod,0) + _sv
+            _pms  = [m.strip() for m in _perf.split(";") if m.strip()]
+            _sv_per_mod = _sv / len(_pms) if len(_pms) > 1 else _sv  # split demand across modules
+            for _pm in _pms:
+                _mod = _mk(_pm)
+                if _mod: _vaga_dem[_mod] = _vaga_dem.get(_mod,0) + _sv_per_mod
 
         # Iterative project-based model
         _ws = _copy.copy(_cslots)
@@ -1637,8 +1643,8 @@ with tab5:
                           if c!=_oc
                           and not _cjr.get(c,False)
                           and (_MAX-_ws.get(c,0))>=_ps      # enough free slots
-                          and _cslots.get(c,0) <= _MAX]      # not originally overloaded
-                _cands.sort(key=lambda x: x[1])
+                          and _cslots_p.get(c,0) <= _MAX]    # not originally overloaded as principal
+                _cands.sort(key=lambda x: -x[1])  # most free first
                 if _cands:
                     _bc,_ = _cands[0]
                     _ws[_bc] = _ws.get(_bc,0) + _ps

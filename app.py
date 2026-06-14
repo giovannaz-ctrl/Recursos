@@ -1646,18 +1646,7 @@ with tab5:
                 "hire": _hire,
             }
 
-        _total_hire = sum(r["hire"] for r in _cap_results.values())
-
-        # KPI
-        _n_redist = sum(1 for r in _cap_results.values() if r["moved"])
-        _n_hire   = sum(1 for r in _cap_results.values() if r["hire"] > 0)
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html(_total_hire,        "Contratar",             "rose")}
-            {kpi_html(_n_hire,            "Módulos com gap",       "amber")}
-            {kpi_html(_n_redist,          "Módulos redistribuir",  "green")}
-        </div>
-        """, unsafe_allow_html=True)
+        # KPIs calculated after all modules added — see below
 
         # Build Excel export rows
         _export_rows = []
@@ -1880,6 +1869,18 @@ with tab5:
             _mod_summary.append({"Módulo": _mod, "Contratar": _r["hire"]})
         _mod_df = pd.DataFrame(_mod_summary)[["Módulo","Contratar"]]
         _mod_df = _mod_df[_mod_df["Contratar"] > 0].reset_index(drop=True)
+        # Recalculate KPIs after all modules (including vacancy-only) are added
+        _total_hire = sum(r["hire"] for r in _cap_results.values())
+        _n_hire     = sum(1 for r in _cap_results.values() if r["hire"] > 0)
+        _n_redist   = sum(1 for r in _cap_results.values() if r.get("moved"))
+        st.markdown(f"""
+        <div class="kpi-grid">
+            {kpi_html(_total_hire, "Contratar",            "rose")}
+            {kpi_html(_n_hire,     "Módulos com gap",      "amber")}
+            {kpi_html(_n_redist,   "Módulos redistribuir", "green")}
+        </div>
+        """, unsafe_allow_html=True)
+
         st.dataframe(
                 _mod_df,
                 use_container_width=True,

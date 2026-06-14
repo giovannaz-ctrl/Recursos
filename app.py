@@ -1516,7 +1516,7 @@ with tab5:
         _MAX   = 3.0
         _ALIAS = {
             "AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI",
-            "Custeio":"CO","SERVIÇO":"PS","SAC Planning":"SD",
+            "Custeio":"CO","SERVIÇO":"PS",
             "AVALARA":"AVARALA","Group Report":"Group Reporting",
         }
         def _mk(p):

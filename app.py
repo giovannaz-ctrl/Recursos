@@ -170,9 +170,15 @@ def load_data(file_bytes: bytes):
         comp_raw    = row.get("Complexidade", None)
         complexidade = str(comp_raw).strip() if comp_raw is not None and pd.notna(comp_raw) else "Média"
         ded_raw     = row.get("Peso Dedicação Principal", row.get("Peso Dedicação", None))
-        dedicacao   = float(ded_raw) if ded_raw is not None and pd.notna(ded_raw) else 1.0
+        try:
+            dedicacao = float(ded_raw) if ded_raw is not None and pd.notna(ded_raw) else 1.0
+        except (ValueError, TypeError):
+            dedicacao = 1.0
         ded_sombra_raw = row.get("Peso Dedicação Sombra", None)
-        dedicacao_sombra = float(ded_sombra_raw) if ded_sombra_raw is not None and pd.notna(ded_sombra_raw) else 0.4
+        try:
+            dedicacao_sombra = float(ded_sombra_raw) if ded_sombra_raw is not None and pd.notna(ded_sombra_raw) else 0.4
+        except (ValueError, TypeError):
+            dedicacao_sombra = 0.4
 
 
         # Principal consultant(s)

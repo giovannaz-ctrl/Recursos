@@ -1501,84 +1501,59 @@ with tab5:
         st.markdown('<div class="section-title">📊 Análise de Capacidade e Necessidade de Contratação</div>',
                     unsafe_allow_html=True)
 
-        with st.expander("❓ Como funciona o modelo de cálculo", expanded=False):
+        # Help button — opens documentation in a dialog
+        if st.button("❓ Como funciona o modelo", key="help_modelo"):
+            st.session_state["show_modelo_help"] = not st.session_state.get("show_modelo_help", False)
+
+        if st.session_state.get("show_modelo_help", False):
             st.markdown("""
-## Conceito Base: Slots
+<div style='background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);
+border-radius:12px;padding:1.5rem 2rem;margin:.5rem 0 1rem;'>
 
-Cada consultor tem **capacidade máxima de 3 slots**.
+<h3 style='font-size:1rem;font-weight:500;margin:0 0 1rem;'>📐 Modelo de Cálculo — Capacidade e Contratação</h3>
 
-O slot de um projeto é calculado assim:
-> `Slots = Complexidade × Peso Dedicação`
+<h4 style='font-size:.88rem;font-weight:500;margin:.8rem 0 .3rem;'>Conceito base: Slots</h4>
+<p style='font-size:.82rem;margin:0 0 .5rem;'>Cada consultor tem capacidade máxima de <b>3 slots</b>.</p>
+<code style='font-size:.8rem;'>Slots = Complexidade × Peso Dedicação</code>
+<table style='font-size:.78rem;margin:.5rem 0;border-collapse:collapse;'>
+<tr><td style='padding:2px 12px 2px 0;color:var(--color-text-secondary);'>Alta</td><td><b>3.0</b></td></tr>
+<tr><td style='padding:2px 12px 2px 0;color:var(--color-text-secondary);'>Média</td><td><b>1.5</b></td></tr>
+<tr><td style='padding:2px 12px 2px 0;color:var(--color-text-secondary);'>Baixa</td><td><b>1.0</b></td></tr>
+</table>
+<ul style='font-size:.8rem;margin:.3rem 0;padding-left:1.2rem;'>
+<li>Dedicação é <b>por projeto</b> — soma de módulos no mesmo projeto é limitada a 1.0 (cap)</li>
+<li>Sombras também consomem slots com seu próprio peso</li>
+</ul>
 
-| Complexidade | Valor |
-|---|---|
-| Alta | 3.0 |
-| Média | 1.5 |
-| Baixa | 1.0 |
+<h4 style='font-size:.88rem;font-weight:500;margin:.8rem 0 .3rem;'>Passo 1 — Carga atual</h4>
+<code style='font-size:.8rem;'>Carga = Σ (Complexidade × min(1.0, Σ dedicações no projeto))</code>
 
-**Regras importantes:**
-- A dedicação é **por projeto** — se o consultor atende MM e WM na Brasal, a soma das dedicações não pode ultrapassar 1.0 naquele projeto
-- Se a soma ultrapassar 1.0, o modelo aplica automaticamente o cap em 1.0
-- Sombras também consomem slots (com seu próprio peso de dedicação)
+<h4 style='font-size:.88rem;font-weight:500;margin:.8rem 0 .3rem;'>Passo 2 — Sobrecarregados</h4>
+<p style='font-size:.82rem;margin:0;'>Consultor com slots &gt; 3.0 está sobrecarregado. Juniores e sobrecarregados não entram como candidatos.</p>
 
----
+<h4 style='font-size:.88rem;font-weight:500;margin:.8rem 0 .3rem;'>Passo 3 — Redistribuição (iterativo)</h4>
+<ol style='font-size:.8rem;margin:.3rem 0;padding-left:1.2rem;'>
+<li>Projetos do sobrecarregado ordenados do maior slot para o menor</li>
+<li>Busca candidato no mesmo módulo com slots suficientes para o projeto inteiro</li>
+<li>Prioriza quem tem mais slots livres</li>
+<li>Deduz slots do candidato imediatamente (evita dupla sugestão)</li>
+</ol>
 
-## Passo 1 — Calcular a carga atual de cada consultor
+<h4 style='font-size:.88rem;font-weight:500;margin:.8rem 0 .3rem;'>Passo 4 — Contratação</h4>
+<code style='font-size:.8rem;'>Gap = excesso não redistribuído + vagas abertas<br>Contratar = ceil(Gap ÷ 3)</code>
 
-Para cada consultor, agrupa todas as linhas do Cockpit por projeto e soma as dedicações:
+<h4 style='font-size:.88rem;font-weight:500;margin:.8rem 0 .3rem;'>Resultado</h4>
+<table style='font-size:.78rem;border-collapse:collapse;width:100%;'>
+<tr style='background:var(--color-background-primary);'><td style='padding:4px 8px;'>Candidato disponível</td><td style='padding:4px 8px;'>♻️ Redistribuir → indica quem</td></tr>
+<tr><td style='padding:4px 8px;'>Redistribuição parcial</td><td style='padding:4px 8px;'>♻️ Parcial + 🔴 Contratar N</td></tr>
+<tr style='background:var(--color-background-primary);'><td style='padding:4px 8px;'>Sem candidato</td><td style='padding:4px 8px;'>🔴 Contratar N</td></tr>
+</table>
 
-> `Carga total = Σ (Complexidade × min(1.0, Σ dedicações no projeto))`
-
----
-
-## Passo 2 — Identificar sobrecarregados
-
-Consultor com **slots > 3.0** está sobrecarregado.
-- Júniores **não** entram como opção de redistribuição
-- Consultores originalmente sobrecarregados **não** podem receber projetos
-
----
-
-## Passo 3 — Redistribuição (modelo iterativo)
-
-Para cada módulo, ordenado do mais sobrecarregado para o menos:
-
-1. Lista os projetos do sobrecarregado, do maior slot para o menor
-2. Para cada projeto, busca candidato no mesmo módulo que:
-   - Não é júnior
-   - Não estava originalmente sobrecarregado
-   - Tem slots livres **suficientes para o projeto inteiro**
-   - Prioriza quem tem **mais slots livres**
-3. Se encontrou → redistribui e deduz os slots imediatamente
-4. Se não encontrou → projeto vai para a fila de contratação
-
----
-
-## Passo 4 — Contratação
-
-> `Gap = excesso não redistribuído + vagas abertas sem consultor`
-> `Contratar = ceil(Gap ÷ 3)`
-
-Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente entre os módulos.
-
----
-
-## Resultado por módulo
-
-| Situação | Indicação |
-|---|---|
-| Há candidato disponível | ♻️ Redistribuir → indica quem |
-| Redistribuição parcial + gap | ♻️ Redistribuir parcial + 🔴 Contratar N |
-| Nenhum candidato | 🔴 Contratar N |
-
----
-
-## O que o modelo NÃO considera
-- Ordem de processamento pode não ser ótima (heurística)
-- Não avalia Go Lives como fator de carga temporária
-- Não projeta crescimento de carteira
-- Vagas sem sombra definida não geram demanda de sombra
-            """)
+<p style='font-size:.75rem;color:var(--color-text-secondary);margin:1rem 0 0;'>
+⚠️ O modelo não considera Go Lives como carga temporária, crescimento de carteira ou ordem ótima de processamento.
+</p>
+</div>
+""", unsafe_allow_html=True)
 
         # Legenda do racional
         import math as _math, copy as _copy

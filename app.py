@@ -1638,7 +1638,7 @@ with tab5:
             _remaining = sum(max(0,_ws.get(c,0)-_MAX) for c,_ in _overloaded)
             _vaga      = _vaga_dem.get(_mod, 0)
             _total_gap = _remaining + _vaga
-            _hire      = _math.floor(_total_gap / _MAX) if _total_gap > 0 else 0
+            _hire      = _math.ceil(_total_gap / _MAX) if _total_gap > 0 else 0
             _cap_results[_mod] = {
                 "overloaded": [(c, _cslots.get(c,0)) for c,_ in _overloaded],
                 "moved": _moved, "vaga": round(_vaga,1),
@@ -1871,7 +1871,7 @@ with tab5:
                 _free_v= sum(max(0,_MAX-_cslots.get(c,0)) for c in _mc_v
                              if _cslots.get(c,0) < _MAX and not _cjr.get(c,False))
                 _gap_v = max(0, _vslots - _free_v)
-                _hire_v= _math.floor(_gap_v / _MAX) if _gap_v > 0 else 0
+                _hire_v= _math.ceil(_gap_v / _MAX) if _gap_v > 0 else 0
                 if _hire_v > 0:
                     _cap_results[_vm] = {"overloaded":[],"moved":[],"vaga":round(_vslots,1),
                                          "remaining":0,"total_gap":round(_gap_v,1),"hire":_hire_v}

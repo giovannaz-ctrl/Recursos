@@ -1501,6 +1501,85 @@ with tab5:
         st.markdown('<div class="section-title">📊 Análise de Capacidade e Necessidade de Contratação</div>',
                     unsafe_allow_html=True)
 
+        with st.expander("❓ Como funciona o modelo de cálculo", expanded=False):
+            st.markdown("""
+## Conceito Base: Slots
+
+Cada consultor tem **capacidade máxima de 3 slots**.
+
+O slot de um projeto é calculado assim:
+> `Slots = Complexidade × Peso Dedicação`
+
+| Complexidade | Valor |
+|---|---|
+| Alta | 3.0 |
+| Média | 1.5 |
+| Baixa | 1.0 |
+
+**Regras importantes:**
+- A dedicação é **por projeto** — se o consultor atende MM e WM na Brasal, a soma das dedicações não pode ultrapassar 1.0 naquele projeto
+- Se a soma ultrapassar 1.0, o modelo aplica automaticamente o cap em 1.0
+- Sombras também consomem slots (com seu próprio peso de dedicação)
+
+---
+
+## Passo 1 — Calcular a carga atual de cada consultor
+
+Para cada consultor, agrupa todas as linhas do Cockpit por projeto e soma as dedicações:
+
+> `Carga total = Σ (Complexidade × min(1.0, Σ dedicações no projeto))`
+
+---
+
+## Passo 2 — Identificar sobrecarregados
+
+Consultor com **slots > 3.0** está sobrecarregado.
+- Júniores **não** entram como opção de redistribuição
+- Consultores originalmente sobrecarregados **não** podem receber projetos
+
+---
+
+## Passo 3 — Redistribuição (modelo iterativo)
+
+Para cada módulo, ordenado do mais sobrecarregado para o menos:
+
+1. Lista os projetos do sobrecarregado, do maior slot para o menor
+2. Para cada projeto, busca candidato no mesmo módulo que:
+   - Não é júnior
+   - Não estava originalmente sobrecarregado
+   - Tem slots livres **suficientes para o projeto inteiro**
+   - Prioriza quem tem **mais slots livres**
+3. Se encontrou → redistribui e deduz os slots imediatamente
+4. Se não encontrou → projeto vai para a fila de contratação
+
+---
+
+## Passo 4 — Contratação
+
+> `Gap = excesso não redistribuído + vagas abertas sem consultor`
+> `Contratar = ceil(Gap ÷ 3)`
+
+Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente entre os módulos.
+
+---
+
+## Resultado por módulo
+
+| Situação | Indicação |
+|---|---|
+| Há candidato disponível | ♻️ Redistribuir → indica quem |
+| Redistribuição parcial + gap | ♻️ Redistribuir parcial + 🔴 Contratar N |
+| Nenhum candidato | 🔴 Contratar N |
+
+---
+
+## O que o modelo NÃO considera
+- Ordem de processamento pode não ser ótima (heurística)
+- Não avalia Go Lives como fator de carga temporária
+- Não projeta crescimento de carteira
+- Vagas sem sombra definida não geram demanda de sombra
+            """)
+
         # Legenda do racional
         import math as _math, copy as _copy
         _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}

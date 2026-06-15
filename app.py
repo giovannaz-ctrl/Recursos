@@ -1935,14 +1935,37 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 unsafe_allow_html=True,
             )
 
-        _vtab_r, _vtab_h = st.tabs([
-            f"♻️ Redistribuir ({_n_redist_v})",
-            f"🔴 Contratar ({_n_hire_v})",
-        ])
-        with _vtab_r:
-            _vaga_table(_redist_rows)
-        with _vtab_h:
-            _vaga_table(_hire_rows)
+        _v_view = st.radio(
+            "Visualização",
+            ["Por indicativo", "Por projeto"],
+            horizontal=True,
+            key="vaga_view"
+        )
+
+        if _v_view == "Por indicativo":
+            _vtab_r, _vtab_h = st.tabs([
+                f"♻️ Redistribuir ({_n_redist_v})",
+                f"🔴 Contratar ({_n_hire_v})",
+            ])
+            with _vtab_r:
+                _vaga_table(_redist_rows)
+            with _vtab_h:
+                _vaga_table(_hire_rows)
+        else:
+            # By project — dynamic tabs
+            _all_proj_vagas = sorted(set(r[0].lstrip("🟢🔵🟡 ") for r in _redist_rows + _hire_rows))
+            if _all_proj_vagas:
+                _proj_tabs = st.tabs([p[:30] for p in _all_proj_vagas])
+                for _pt, _pn in zip(_proj_tabs, _all_proj_vagas):
+                    with _pt:
+                        _proj_redist = [r for r in _redist_rows if r[0].lstrip("🟢🔵🟡 ") == _pn]
+                        _proj_hire   = [r for r in _hire_rows   if r[0].lstrip("🟢🔵🟡 ") == _pn]
+                        if _proj_redist:
+                            st.markdown("**♻️ Redistribuir**")
+                            _vaga_table(_proj_redist)
+                        if _proj_hire:
+                            st.markdown("**🔴 Contratar**")
+                            _vaga_table(_proj_hire)
 
         # ── Visão de Slots por Consultor ─────────────────────────
         st.markdown('<div class="section-title">📊 Slots por Consultor</div>',
@@ -2012,10 +2035,18 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         )
 
         # Segment consultants
-        _above  = sorted([c for c,s in _cs2.items() if s > _MAX and not _cjr.get(c,False)], key=lambda c: -_cs2[c])
-        _at_lim = sorted([c for c,s in _cs2.items() if _MAX*0.9 <= s <= _MAX and not _cjr.get(c,False)], key=lambda c: -_cs2[c])
-        _avail  = sorted([c for c,s in _cs2.items() if s < _MAX*0.9 and not _cjr.get(c,False)], key=lambda c: -_cs2[c])
-        _juniors= sorted([c for c,s in _cs2.items() if _cjr.get(c,False)], key=lambda c: -_cs2[c])
+        # Filter by consultant
+        _f_slot_cons = st.multiselect(
+            "Filtrar por consultor",
+            sorted(_cs2.keys()),
+            key="slot_cons_filter",
+            placeholder="Todos os consultores…"
+        )
+
+        _above  = sorted([c for c,s in _cs2.items() if s > _MAX and not _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
+        _at_lim = sorted([c for c,s in _cs2.items() if _MAX*0.9 <= s <= _MAX and not _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
+        _avail  = sorted([c for c,s in _cs2.items() if s < _MAX*0.9 and not _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
+        _juniors= sorted([c for c,s in _cs2.items() if _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
 
         _tab_above, _tab_at, _tab_avail, _tab_jr = st.tabs([
             f"🔴 Acima do limite ({len(_above)})",

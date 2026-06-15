@@ -435,13 +435,12 @@ st.markdown(
 # ═══════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📋 Alocação de Consultores",
     "⚠️ Go Lives",
     "📅 Agenda de Workshops",
     "⏱️ Planejamento Semanal",
     "👥 Recursos",
-    "📈 Projeção de Capacidade",
 ])
 
 
@@ -2413,146 +2412,3 @@ with tab2:
         st.download_button("⬇ Exportar Excel", to_excel_bytes(detail_gl),
                            file_name="golives_conflitos.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# ═══════════════════════════════════════════════════════════════
-# TAB 6 — PROJEÇÃO DE CAPACIDADE
-# ═══════════════════════════════════════════════════════════════
-with tab6:
-    st.markdown("### 📈 Projeção de Capacidade")
-    st.markdown(
-        "<div style='font-size:.82rem;color:#64748b;margin-bottom:1rem;'>"
-        "Projeção mês a mês considerando: carga atual de cada consultor, "
-        "data de Go Live + 4 semanas como encerramento do projeto. "
-        "Projetos sem Go Live permanecem ativos indefinidamente."
-        "</div>", unsafe_allow_html=True
-    )
-
-    from datetime import datetime as _dt, timedelta as _td
-    import plotly.graph_objects as _go
-
-    # Build projection data
-    _dk_p = "Peso Dedicação Principal" if "Peso Dedicação Principal" in df1.columns else "Peso Dedicação"
-    _proj_ded_t  = {}  # {(consultor, projeto): sum_ded}
-    _proj_comp_t = {}
-    _proj_gl_t   = {}
-
-    for _, _r in df1[df1["Papel"]=="Principal"].iterrows():
-        _c    = _r.get("Consultor","")
-        _proj = str(_r.get("Projeto","")).strip()
-        _comp = str(_r.get("Complexidade","Média")).strip()
-        _gl   = _r.get("GoLive")
-        try: _ded = float(_r.get(_dk_p,1.0)) if pd.notna(_r.get(_dk_p)) else 1.0
-        except: _ded = 1.0
-        if not _c or str(_c)=="nan" or not _proj or _proj=="nan": continue
-        _proj_comp_t[_proj] = _comp
-        if pd.notna(_gl):
-            _proj_gl_t[_proj] = pd.Timestamp(_gl) + pd.Timedelta(weeks=4)
-        _proj_ded_t[(_c,_proj)] = _proj_ded_t.get((_c,_proj),0) + _ded
-
-    # Months Jun/2026 to Dec/2027
-    _today  = pd.Timestamp("2026-06-01")
-    _months = pd.date_range(_today, periods=19, freq="MS")
-    _month_labels = [m.strftime("%b/%y") for m in _months]
-
-    # Compute slots per consultant per month
-    _all_cons = sorted(set(c for c,_ in _proj_ded_t.keys()))
-    _proj_data = {}  # {consultor: [slots_per_month]}
-
-    for _c in _all_cons:
-        _monthly = []
-        for _m in _months:
-            _total = 0
-            for (_cc, _proj), _sum_ded in _proj_ded_t.items():
-                if _cc != _c: continue
-                _comp = _proj_comp_t.get(_proj,"Média")
-                _end  = _proj_gl_t.get(_proj)
-                if _end is None or _m <= _end:
-                    _total += _SLOTS.get(_comp,1.5) * min(1.0,_sum_ded)
-            _monthly.append(round(_total,2))
-        _proj_data[_c] = _monthly
-
-    # Filters
-    _f_col1, _f_col2 = st.columns([2,3])
-    _f_status = _f_col1.selectbox(
-        "Filtrar por situação (mês atual)",
-        ["Todos","🔴 Acima do limite","🟡 No limite","🟢 Disponível"],
-        key="proj_status"
-    )
-    _f_cons_list = sorted(_all_cons)
-    _f_cons = _f_col2.multiselect("Filtrar consultores", _f_cons_list, key="proj_cons")
-
-    # Apply filters
-    _filtered_cons = []
-    for _c in _all_cons:
-        _cur = _proj_data[_c][0]
-        if _f_status == "🔴 Acima do limite" and _cur <= 3.0: continue
-        if _f_status == "🟡 No limite" and not (2.7 <= _cur <= 3.0): continue
-        if _f_status == "🟢 Disponível" and _cur >= 2.7: continue
-        if _f_cons and _c not in _f_cons: continue
-        _filtered_cons.append(_c)
-
-    if not _filtered_cons:
-        st.info("Nenhum consultor encontrado com os filtros selecionados.")
-    else:
-        # Summary KPIs for current month
-        _n_over   = sum(1 for c in _all_cons if _proj_data[c][0] > 3.0)
-        _n_at_lim = sum(1 for c in _all_cons if 2.7 <= _proj_data[c][0] <= 3.0)
-        _n_free   = sum(1 for c in _all_cons if _proj_data[c][0] < 2.7)
-
-        # Find month with most overloaded
-        _peak_month = max(range(len(_months)),
-            key=lambda i: sum(1 for c in _all_cons if _proj_data[c][i] > 3.0))
-        _n_peak = sum(1 for c in _all_cons if _proj_data[c][_peak_month] > 3.0)
-
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html(_n_over,   "Acima do limite (hoje)", "rose")}
-            {kpi_html(_n_at_lim, "No limite (hoje)",       "amber")}
-            {kpi_html(_n_free,   "Disponível (hoje)",      "green")}
-            {kpi_html(_n_peak,   f"Pico em {_month_labels[_peak_month]}", "rose")}
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Heatmap table
-        st.markdown('<div class="section-title">🗓️ Carga por Consultor — Mês a Mês</div>', unsafe_allow_html=True)
-
-        def _cell(val):
-            if val > 3.0:   bg="#fecaca"; color="#991b1b"
-            elif val >= 2.7: bg="#fde68a"; color="#92400e"
-            else:            bg="#bbf7d0"; color="#14532d"
-            return (f"<td style='padding:4px 8px;text-align:center;font-size:.75rem;"
-                    f"font-weight:600;background:{bg};color:{color};'>{val:.1f}</td>")
-
-        _hdr = "".join(f"<th style='padding:4px 8px;font-size:.7rem;color:#64748b;font-weight:600;white-space:nowrap;'>{m}</th>" for m in _month_labels)
-        _rows_html = ""
-        for _c in _filtered_cons:
-            _name = f"{_c.split()[0]} {_c.split()[-1]}"
-            _jr_b = " <span style='font-size:.65rem;background:#e0e7ff;color:#3730a3;border-radius:3px;padding:1px 4px;'>Jr</span>" if _cjr.get(_c) else ""
-            _cells = "".join(_cell(v) for v in _proj_data[_c])
-            _rows_html += f"<tr><td style='padding:4px 10px;font-size:.78rem;white-space:nowrap;'>{_name}{_jr_b}</td>{_cells}</tr>"
-
-        st.markdown(
-            "<div style='overflow-x:auto;'><table style='border-collapse:collapse;width:100%;'>"
-            f"<thead><tr><th style='padding:4px 10px;text-align:left;font-size:.7rem;color:#64748b;font-weight:600;'>Consultor</th>{_hdr}</tr></thead>"
-            f"<tbody>{_rows_html}</tbody></table></div>",
-            unsafe_allow_html=True,
-        )
-
-        # Line chart for selected consultants
-        if _f_cons:
-            st.markdown('<div class="section-title">📊 Evolução de Slots</div>', unsafe_allow_html=True)
-            _fig = _go.Figure()
-            _fig.add_hline(y=3.0, line_dash="dash", line_color="#ef4444", annotation_text="Limite (3 slots)")
-            for _c in _f_cons:
-                _fig.add_trace(_go.Scatter(
-                    x=_month_labels, y=_proj_data[_c],
-                    mode="lines+markers", name=f"{_c.split()[0]} {_c.split()[-1]}",
-                    line=dict(width=2), marker=dict(size=6)
-                ))
-            _fig.update_layout(
-                height=350, margin=dict(l=0,r=0,t=10,b=0),
-                legend=dict(orientation="h", y=-0.2),
-                xaxis_title=None, yaxis_title="Slots",
-                plot_bgcolor="white", paper_bgcolor="white",
-            )
-            st.plotly_chart(_fig, use_container_width=True)

@@ -236,15 +236,20 @@ def load_data(file_bytes: bytes):
                     _vaga_proj_gl[_vp] = _r
                     break
 
+    # Get GoLive directly from vagas_rows (PETMAX has no principal, only vagas)
     _vaga_gl_extras = []
-    for _vp, _r in _vaga_proj_gl.items():
-        if _r.get("GoLive") and _vp not in _df_gl_cons["Projeto"].values:
+    _seen_vaga_projs = set()
+    for _vr in vagas_rows:
+        _vp = _vr.get("Projeto","")
+        _vgl = _vr.get("GoLive")
+        if _vp and _vgl and pd.notna(_vgl) and _vp not in _df_gl_cons["Projeto"].values and _vp not in _seen_vaga_projs:
+            _seen_vaga_projs.add(_vp)
             _vaga_gl_extras.append({
                 "Consultor": "— Vaga em aberto —",
                 "Email": "",
-                "Cliente": _r.get("Cliente",""),
+                "Cliente": _vr.get("Cliente",""),
                 "Projeto": _vp,
-                "GoLive": _r.get("GoLive"),
+                "GoLive": _vgl,
                 "Senioridade": "",
                 "Papel": "Vaga",
             })

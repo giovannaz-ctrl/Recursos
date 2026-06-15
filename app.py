@@ -206,7 +206,7 @@ def load_data(file_bytes: bytes):
             for _pm in [m.strip() for m in perfil.split(";") if m.strip()]:
                 vagas_rows.append({"Projeto": projeto, "Perfil": _pm, "Cliente": client,
                                    "Fase": fase, "Complexidade": complexidade,
-                                   "Peso Dedicação": dedicacao})
+                                   "Peso Dedicação": dedicacao, "GoLive": golive})
 
     df1 = pd.DataFrame(rows).drop_duplicates()
 

@@ -509,7 +509,9 @@ with tab1:
         f_cons  = c1.multiselect("Consultor",  sorted(df1["Consultor"].dropna().unique()), key="t1_cons")
         f_proj  = c2.multiselect("Projeto",    sorted(df1["Projeto"].dropna().unique()),   key="t1_proj")
         f_cli   = c3.multiselect("Cliente",    sorted(df1["Cliente"].dropna().unique()),   key="t1_cli")
-        f_mod   = c4.multiselect("Módulo",     sorted(df1["Módulo"].dropna().unique()),    key="t1_mod")
+        # Include modules from open vacancies (e.g. SAC Planning with no consultant)
+        _all_mods = sorted(set(df1["Módulo"].dropna().unique()) | set(df_vagas["Perfil"].dropna().unique()))
+        f_mod   = c4.multiselect("Módulo", _all_mods, key="t1_mod")
         f_fase  = c5.multiselect("Fase",       sorted(df1["Fase"].dropna().unique()) if "Fase" in df1.columns else [], key="t1_fase")
 
     dft = df1.copy()
@@ -518,6 +520,13 @@ with tab1:
     if f_cli:  dft = dft[dft["Cliente"].isin(f_cli)]
     if f_mod:  dft = dft[dft["Módulo"].isin(f_mod)]
     if f_fase: dft = dft[dft["Fase"].isin(f_fase)]
+
+    # Also filter vagas by same filters
+    df_vagas_f_tab1 = df_vagas.copy()
+    if f_proj: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Projeto"].isin(f_proj)]
+    if f_cli:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Cliente"].isin(f_cli)]
+    if f_mod:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Perfil"].isin(f_mod)]
+    if f_fase: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Fase"].isin(f_fase)] if "Fase" in df_vagas_f_tab1.columns else df_vagas_f_tab1
 
     # Global max (unfiltered) keeps color scale stable across filters
     _global_max_proj = max(df1.groupby("Consultor")["Projeto"].nunique().max(), 2)

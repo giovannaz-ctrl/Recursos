@@ -214,7 +214,45 @@ def load_data(file_bytes: bytes):
     _gl_cols = ["Consultor","Email","Cliente","Projeto","GoLive"]
     if "Senioridade" in df1.columns:
         _gl_cols.append("Senioridade")
-    df_golive = df1[df1["GoLive"].notna()][_gl_cols].drop_duplicates().copy()
+    _df_gl_cons = df1[df1["GoLive"].notna()][_gl_cols].drop_duplicates().copy()
+
+    # Add projects with open vacancies (no consultant) that have a Go Live
+    _vaga_gl_rows = []
+    for _, _row in pd.DataFrame(rows).iterrows():
+        pass  # handled below via raw cockpit data
+
+    # Build from raw cockpit — include rows with no principal but with Go Live
+    for _, _raw_row in _raw_df.iterrows() if "_raw_df" in dir() else []:
+        pass
+
+    # Simpler: add vaga projects from vagas_rows that have GoLive
+    _vaga_proj_gl = {}
+    for _vr in vagas_rows:
+        _vp = _vr.get("Projeto","")
+        if _vp and _vp not in _vaga_proj_gl:
+            # find GoLive from rows
+            for _r in rows:
+                if _r.get("Projeto") == _vp and _r.get("GoLive"):
+                    _vaga_proj_gl[_vp] = _r
+                    break
+
+    _vaga_gl_extras = []
+    for _vp, _r in _vaga_proj_gl.items():
+        if _r.get("GoLive") and _vp not in _df_gl_cons["Projeto"].values:
+            _vaga_gl_extras.append({
+                "Consultor": "— Vaga em aberto —",
+                "Email": "",
+                "Cliente": _r.get("Cliente",""),
+                "Projeto": _vp,
+                "GoLive": _r.get("GoLive"),
+                "Senioridade": "",
+                "Papel": "Vaga",
+            })
+
+    if _vaga_gl_extras:
+        df_golive = pd.concat([_df_gl_cons, pd.DataFrame(_vaga_gl_extras)], ignore_index=True)
+    else:
+        df_golive = _df_gl_cons
     df_vagas = pd.DataFrame(vagas_rows).drop_duplicates()
 
     # ── Sheet 2: Agenda Workshop ──────────────────────────────────

@@ -1952,20 +1952,15 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             with _vtab_h:
                 _vaga_table(_hire_rows)
         else:
-            # By project — dynamic tabs
+            # By project — dynamic tabs, all rows in one table per project
             _all_proj_vagas = sorted(set(r[0].lstrip("🟢🔵🟡 ") for r in _redist_rows + _hire_rows))
             if _all_proj_vagas:
                 _proj_tabs = st.tabs([p[:30] for p in _all_proj_vagas])
                 for _pt, _pn in zip(_proj_tabs, _all_proj_vagas):
                     with _pt:
-                        _proj_redist = [r for r in _redist_rows if r[0].lstrip("🟢🔵🟡 ") == _pn]
-                        _proj_hire   = [r for r in _hire_rows   if r[0].lstrip("🟢🔵🟡 ") == _pn]
-                        if _proj_redist:
-                            st.markdown("**♻️ Redistribuir**")
-                            _vaga_table(_proj_redist)
-                        if _proj_hire:
-                            st.markdown("**🔴 Contratar**")
-                            _vaga_table(_proj_hire)
+                        _proj_all = [r for r in _redist_rows + _hire_rows
+                                     if r[0].lstrip("🟢🔵🟡 ") == _pn]
+                        _vaga_table(_proj_all)
 
         # ── Visão de Slots por Consultor ─────────────────────────
         st.markdown('<div class="section-title">📊 Slots por Consultor</div>',

@@ -1660,14 +1660,35 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         import math as _math, copy as _copy
         _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
         _MAX   = 3.0
+        # Grouping rules for vacancy analysis
         _ALIAS = {
+            # FI group: AP, AR, AA, GL and combinations
             "AP":"FI","AR":"FI","GL":"FI","AA":"FI","PL":"FI","Bancos":"FI",
-            "Custeio":"CO","SERVIÇO":"PS",
+            "AP;AR;AA":"FI","AP;AR;AA;GL":"FI","AP;AR;GL":"FI","AR;AA":"FI",
+            "GL;AA":"FI","AP;AA":"FI","AP;AR":"FI",
+            # PP/QM/PM group
+            "PP":"PP;QM;PM","QM":"PP;QM;PM","PM":"PP;QM;PM",
+            "PP;QM":"PP;QM;PM","PP;PM":"PP;QM;PM","QM;PM":"PP;QM;PM",
+            "PP;PM;QM":"PP;QM;PM","PP;QM;PM":"PP;QM;PM","PM;PP":"PP;QM;PM",
+            # CO group: CO, CO Custeio, CO Serviço
+            "CO Custeio":"CO","CO Serviço":"CO","Custeio":"CO",
+            # SD group: SD and SERVIÇO
+            "SERVIÇO":"SD",
+            # Individual modules
             "AVALARA":"AVARALA","Group Report":"Group Reporting",
         }
         def _mk(p):
-            p = p.strip()
-            return _ALIAS.get(p, p)
+            p = p.strip().rstrip()
+            # Handle multi-module perfis — map each part and return canonical group
+            _parts = [_pp.strip() for _pp in p.split(";") if _pp.strip()]
+            # First try full match
+            if p in _ALIAS: return _ALIAS[p]
+            # Then try first part
+            if _parts and _parts[0] in _ALIAS: return _ALIAS[_parts[0]]
+            # Check if all parts map to same group
+            _mapped = set(_ALIAS.get(_pp, _pp) for _pp in _parts)
+            if len(_mapped) == 1: return _mapped.pop()
+            return p
 
         # Consultant slots: group by (consultor, projeto, papel) cap dedication at 1.0
         # Prevents multi-module lines from double-counting the same project

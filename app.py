@@ -1659,7 +1659,7 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         # Legenda do racional
         import math as _math, copy as _copy
         _SLOTS = {"Alta": 3.0, "Média": 1.5, "Baixa": 1.0}
-        _MAX   = 3.0
+        _MAX   = 2.0
         # Grouping rules for vacancy analysis
         _ALIAS = {
             # FI group: AP, AR, AA, GL and combinations
@@ -2016,9 +2016,9 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             _cs2[_c] = _cs2.get(_c, 0) + _SLOTS.get(_comp,1.5) * min(1.0, _sum_ded)
 
         def _bar2(slots, mx=3.0):
-            n_fill = min(int(round(slots)), 3)
-            n_over = max(0, int(round(slots)) - 3)
-            n_free = max(0, 3 - n_fill)
+            n_fill = min(int(round(slots)), 2)
+            n_over = max(0, int(round(slots)) - 2)
+            n_free = max(0, 2 - n_fill)
             if slots > mx:        col = "#ef4444"; flag = "🔴"
             elif slots >= mx*0.9: col = "#f97316"; flag = "🟡"
             else:                 col = "#10b981"; flag = "🟢"

@@ -2100,44 +2100,47 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             else:
                 st.info("Nenhum júnior cadastrado.")
 
-        # ── Resumo por Módulo ──────────────────────────────────────
+        # ── Resumo por Módulo — baseado nas Posições em Aberto após redistribuição
         st.markdown('<div class="section-title">📋 Resumo por Módulo</div>', unsafe_allow_html=True)
 
-        # Add vacancy-only modules not covered by overload model
-        for _vm, _vslots in _vaga_dem.items():
-            if _vm not in _cap_results and _vslots > 0:
-                _mc_v   = [c for c,mods in _cmods.items() if _vm in mods]
-                _free_v = sum(max(0,_MAX-_cslots.get(c,0)) for c in _mc_v
-                              if _cslots.get(c,0) < _MAX and not _cjr.get(c,False))
-                _gap_v  = max(0, _vslots - _free_v)
-                _hire_v = _math.ceil(_gap_v / _MAX) if _gap_v > 0 else 0
-                if _hire_v > 0:
-                    _cap_results[_vm] = {"overloaded":[],"moved":[],"vaga":round(_vslots,1),
-                                         "remaining":0,"total_gap":round(_gap_v,1),"hire":_hire_v}
+        # Build from _hire_rows (vagas that could not be redistributed)
+        _mod_hire_count = {}
+        for _hr in _hire_rows:
+            _perf = _hr[1]  # perfil column
+            _slots_h = float(_hr[3]) if _hr[3] else 0  # slots column
+            for _pm in str(_perf).split(";"):
+                _mod_h = _mk(_pm.strip())
+                if _mod_h:
+                    if _mod_h not in _mod_hire_count:
+                        _mod_hire_count[_mod_h] = 0.0
+                    _mod_hire_count[_mod_h] += _slots_h / len([m for m in str(_perf).split(";") if m.strip()])
 
-        _mod_summary = [{"Módulo": _mod, "Contratar": _r["hire"]}
-                        for _mod, _r in sorted(_cap_results.items(), key=lambda x: -x[1]["hire"])
-                        if _r["hire"] > 0]
+        _mod_summary = []
+        for _mod, _gap in sorted(_mod_hire_count.items(), key=lambda x: -x[1]):
+            _hire_n = _math.ceil(_gap / _MAX) if _gap > 0 else 0
+            if _hire_n > 0:
+                _mod_summary.append({"Módulo": _mod, "Gap (slots)": round(_gap,1), "Contratar": int(_hire_n)})
+
         if _mod_summary:
             _mod_df = pd.DataFrame(_mod_summary)
-            # Recalculate KPIs
             _total_hire2 = _mod_df["Contratar"].sum()
             _n_hire2     = len(_mod_df)
-            _n_redist2   = sum(1 for r in _cap_results.values() if r.get("moved"))
+            _n_redist2   = _n_redist_v
             st.markdown(f"""
             <div class="kpi-grid">
                 {kpi_html(int(_total_hire2), "Contratar",            "rose")}
                 {kpi_html(int(_n_hire2),     "Módulos com gap",      "amber")}
-                {kpi_html(int(_n_redist2),   "Módulos redistribuir", "green")}
+                {kpi_html(int(_n_redist2),   "Vagas redistribuídas", "green")}
             </div>
             """, unsafe_allow_html=True)
             st.dataframe(_mod_df, use_container_width=True, hide_index=True,
                 column_config={
-                    "Módulo":    st.column_config.TextColumn("Módulo",   width="medium"),
-                    "Contratar": st.column_config.NumberColumn("Contratar", width="small"),
+                    "Módulo":       st.column_config.TextColumn("Módulo",        width="medium"),
+                    "Gap (slots)":  st.column_config.NumberColumn("Gap (slots)", width="small", format="%.1f"),
+                    "Contratar":    st.column_config.NumberColumn("Contratar",   width="small"),
                 })
         else:
-            st.success("Nenhum gap identificado.")
+            st.success("Nenhum gap identificado — todas as vagas redistribuídas.")
 
         # Vagas abertas
         if not df_hiring.empty:

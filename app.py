@@ -2015,10 +2015,10 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             _comp = _cs2_comp.get(_proj, "Média")
             _cs2[_c] = _cs2.get(_c, 0) + _SLOTS.get(_comp,1.5) * min(1.0, _sum_ded)
 
-        def _bar2(slots, mx=3.0):
-            n_fill = min(int(round(slots)), 2)
-            n_over = max(0, int(round(slots)) - 2)
-            n_free = max(0, 2 - n_fill)
+        def _bar2(slots, mx=_MAX):
+            n_fill = min(int(round(slots)), int(mx))
+            n_over = max(0, int(round(slots)) - int(mx))
+            n_free = max(0, int(mx) - n_fill)
             if slots > mx:        col = "#ef4444"; flag = "🔴"
             elif slots >= mx*0.9: col = "#f97316"; flag = "🟡"
             else:                 col = "#10b981"; flag = "🟢"
@@ -2033,7 +2033,7 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             html = ""
             for _cn in consultant_list:
                 _sl = _cs2.get(_cn, 0)
-                _blocks, _slabel, _flag, _col = _bar2(_sl)
+                _blocks, _slabel, _flag, _col = _bar2(_sl, _MAX)
                 _jr_badge = (" <span style='background:#e0e7ff;color:#3730a3;border-radius:3px;"
                              "padding:1px 5px;font-size:.65rem;font-weight:600;'>Jr.</span>"
                              if _cjr.get(_cn, False) else "")

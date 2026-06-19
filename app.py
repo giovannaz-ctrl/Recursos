@@ -436,7 +436,7 @@ GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/giovannaz-ctrl/Recursos/ma
 with st.sidebar:
     st.markdown(
         f"<div style='text-align:center; padding:.8rem 0 .4rem;'>"
-        f"<span style='font-size:1.4rem;font-weight:700;color:#f97316;letter-spacing:.05em;'>NUMEN</span>"
+        f"<span style='font-size:1.4rem;font-weight:700;color:#f97316;letter-spacing:.05em;'>NUMEN</span>'"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -1427,48 +1427,112 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Matrix view: consultores × módulos ───────────────────
+        # ── Matrix view: consultores × módulos ─────────────────
         st.markdown('<div class="section-title">Matriz de Especialidades</div>',
                     unsafe_allow_html=True)
 
+        # ── Filtros e ordenação ─────────────────────────────────────
+        _mxf1, _mxf2 = st.columns([3, 2])
+        with _mxf1:
+            _mx_cons_filter = st.multiselect(
+                "Filtrar por consultor",
+                sorted(dfr["Consultor"].dropna().unique()),
+                key="mx_cons_filter",
+                placeholder="Todos os consultores…",
+            )
+        with _mxf2:
+            _mx_base_opts = [
+                "Consultor (A→Z)", "Consultor (Z→A)",
+                "Status", "Especialidades (mais)", "Especialidades (menos)",
+            ]
+            _mx_mod_opts_asc  = [f"↑ {m}" for m in all_modulos]
+            _mx_mod_opts_desc = [f"↓ {m}" for m in all_modulos]
+            _mx_sort_col = st.selectbox(
+                "Ordenar por",
+                _mx_base_opts + _mx_mod_opts_asc + _mx_mod_opts_desc,
+                key="mx_sort_col",
+                index=0,
+            )
+
+        # Apply consultant filter
+        dfr_mx = dfr.copy()
+        if _mx_cons_filter:
+            dfr_mx = dfr_mx[dfr_mx["Consultor"].isin(_mx_cons_filter)]
+
+        # Apply sort
+        if _mx_sort_col == "Consultor (A→Z)":
+            dfr_mx = dfr_mx.sort_values("Consultor", ascending=True)
+        elif _mx_sort_col == "Consultor (Z→A)":
+            dfr_mx = dfr_mx.sort_values("Consultor", ascending=False)
+        elif _mx_sort_col == "Status":
+            dfr_mx = dfr_mx.sort_values(["Status", "Consultor"])
+        elif _mx_sort_col == "Especialidades (mais)":
+            dfr_mx["_n_esp"] = dfr_mx["Especialidades"].apply(len)
+            dfr_mx = dfr_mx.sort_values("_n_esp", ascending=False).drop(columns=["_n_esp"])
+        elif _mx_sort_col == "Especialidades (menos)":
+            dfr_mx["_n_esp"] = dfr_mx["Especialidades"].apply(len)
+            dfr_mx = dfr_mx.sort_values("_n_esp", ascending=True).drop(columns=["_n_esp"])
+        elif _mx_sort_col.startswith("↑ "):
+            _sort_mod = _mx_sort_col[2:]
+            dfr_mx["_has"] = dfr_mx["Especialidades"].apply(lambda s: 1 if _sort_mod in s else 0)
+            dfr_mx = dfr_mx.sort_values(["_has", "Consultor"], ascending=[False, True]).drop(columns=["_has"])
+        elif _mx_sort_col.startswith("↓ "):
+            _sort_mod = _mx_sort_col[2:]
+            dfr_mx["_has"] = dfr_mx["Especialidades"].apply(lambda s: 1 if _sort_mod in s else 0)
+            dfr_mx = dfr_mx.sort_values(["_has", "Consultor"], ascending=[True, True]).drop(columns=["_has"])
+
+        dfr_mx = dfr_mx.reset_index(drop=True)
+
         # Pagination
-        _mx_page_size = 10
-        _mx_sorted    = dfr.sort_values(["Status","Consultor"]).reset_index(drop=True)
-        _mx_total     = len(_mx_sorted)
+        _mx_page_size = 15
+        _mx_total     = len(dfr_mx)
         _mx_n_pages   = max(1, -(-_mx_total // _mx_page_size))
 
         if "mx_page" not in st.session_state:
             st.session_state["mx_page"] = 0
-        # Reset page if filters changed and page is out of range
         if st.session_state["mx_page"] >= _mx_n_pages:
             st.session_state["mx_page"] = 0
 
         _mp_left, _mp_mid, _mp_right = st.columns([1, 8, 1])
         with _mp_left:
-            if st.button("◀", key="mx_prev") and st.session_state["mx_page"] > 0:
+            if st.button("◄", key="mx_prev") and st.session_state["mx_page"] > 0:
                 st.session_state["mx_page"] -= 1
                 st.rerun()
         with _mp_right:
-            if st.button("▶", key="mx_next") and st.session_state["mx_page"] < _mx_n_pages - 1:
+            if st.button("►", key="mx_next") and st.session_state["mx_page"] < _mx_n_pages - 1:
                 st.session_state["mx_page"] += 1
                 st.rerun()
         with _mp_mid:
+            _filter_info = f" · mostrando {_mx_total} de {len(dfr)}" if _mx_cons_filter else f" · {_mx_total} consultores"
             st.markdown(
                 f"<div style='text-align:center; padding:.3rem 0; font-size:.85rem; color:#94a3b8;'>"
-                f"Página {st.session_state['mx_page']+1} de {_mx_n_pages} · {_mx_total} consultores</div>",
+                f"Página {st.session_state['mx_page']+1} de {_mx_n_pages}{_filter_info}</div>",
                 unsafe_allow_html=True,
             )
 
         _mx_start = st.session_state["mx_page"] * _mx_page_size
-        dfr_page  = _mx_sorted.iloc[_mx_start:_mx_start + _mx_page_size]
+        dfr_page  = dfr_mx.iloc[_mx_start:_mx_start + _mx_page_size]
 
-        # Build matrix HTML
-        header_cells = "".join(
-            f"<th style='padding:5px 8px; font-size:.72rem; font-weight:600; color:#475569;"
-            f"writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap;"
-            f"min-width:32px;'>{m}</th>"
-            for m in all_modulos
+        # Build matrix HTML — highlight sorted column
+        _sorted_mod = (
+            _mx_sort_col[2:] if _mx_sort_col.startswith(("↑ ", "↓ ")) else None
         )
+        _sort_arrow = {
+            f"↑ {_sorted_mod}": " ↑",
+            f"↓ {_sorted_mod}": " ↓",
+        }.get(_mx_sort_col, "") if _sorted_mod else ""
+
+        def _mx_th(m):
+            _is_sort = m == _sorted_mod
+            _arrow = _sort_arrow if _is_sort else ""
+            _bg = "background:#fff7ed; color:#f97316;" if _is_sort else ""
+            return (
+                f"<th style='padding:5px 8px; font-size:.72rem; font-weight:600; color:#475569;"
+                f"writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap;"
+                f"min-width:32px; {_bg}'>{m}{_arrow}</th>"
+            )
+
+        header_cells = "".join(_mx_th(m) for m in all_modulos)
 
         status_color = {"Alocado": "#f59e0b", "Disponível": "#10b981"}
         status_bg    = {"Alocado": "#fffbeb", "Disponível": "#f0fdf4"}
@@ -1483,9 +1547,12 @@ with tab5:
                 f"white-space:nowrap;'>{row['Status']}</span>"
             )
             mod_cells = "".join(
-                f"<td style='text-align:center; padding:4px;'>"
-                f"{'<span style="color:#f97316; font-size:1rem;">●</span>' if m in row['Especialidades'] else '<span style="color:#e2e8f0;">·</span>'}"
-                f"</td>"
+                (
+                    f"<td style='text-align:center; padding:4px;"
+                    f"{'background:#fff7ed;' if m == _sorted_mod else ''}'>"
+                    f"{'<span style="color:#f97316; font-size:1rem;">&#9679;</span>' if m in row['Especialidades'] else '<span style="color:#e2e8f0;">&#xB7;</span>'}"
+                    f"</td>"
+                )
                 for m in all_modulos
             )
             body_rows += (
@@ -1509,6 +1576,10 @@ with tab5:
           </thead>
           <tbody>{body_rows}</tbody>
         </table>
+        </div>
+        <div style='font-size:.73rem;color:#94a3b8;margin-top:.4rem;'>
+        💡 Use <b>Ordenar por</b> ↑  para ver quem tem determinado módulo no topo &nbsp;·&nbsp;
+        A coluna ordenada fica destacada em laranja
         </div>
         """, unsafe_allow_html=True)
 

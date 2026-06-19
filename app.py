@@ -2130,10 +2130,22 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                              "padding:1px 5px;font-size:.65rem;font-weight:600;'>Jr.</span>"
                              if _cjr.get(_cn, False) else "")
                 _name = f"{_cn.split()[0]} {_cn.split()[-1]}"
+                # Módulos do consultor (da planilha de recursos)
+                _mods_set = _cmods.get(_cn, set())
+                if _mods_set:
+                    _mods_html = " ".join(
+                        f"<span style='display:inline-block;background:#f1f5f9;color:#475569;"
+                        f"border-radius:3px;padding:1px 5px;font-size:.65rem;font-weight:600;"
+                        f"margin:1px;white-space:nowrap;'>{m}</span>"
+                        for m in sorted(_mods_set)
+                    )
+                else:
+                    _mods_html = "<span style='color:#cbd5e1;font-size:.72rem;'>—</span>"
                 html += (
                     f"<tr style='border-bottom:1px solid #f8fafc;'>"
                     f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;white-space:nowrap;'>"
                     f"{_name}{_jr_badge}</td>"
+                    f"<td style='padding:5px 10px;font-size:.78rem;'>{_mods_html}</td>"
                     f"<td style='padding:5px 10px;'>{_blocks}</td>"
                     f"<td style='padding:5px 10px;font-weight:700;font-size:.82rem;color:{_col};'>"
                     f"{_slabel} {_flag}</td>"
@@ -2146,6 +2158,7 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             "<table style='width:100%;border-collapse:collapse;'>"
             "<thead><tr style='background:#f8fafc;'>"
             "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Consultor</th>"
+            "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Módulos</th>"
             "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Slots ocupados</th>"
             "<th style='padding:6px 10px;text-align:left;font-size:.75rem;color:#64748b;font-weight:600;'>Total</th>"
             "</tr></thead><tbody>"

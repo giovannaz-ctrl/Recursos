@@ -446,6 +446,9 @@ with st.sidebar:
     uploaded = st.file_uploader("Carregar novo arquivo Excel", type=["xlsx","xls"],
                                  help="Deixe vazio para usar o arquivo padrão do repositório")
     st.markdown("---")
+    if st.button("🔄 Limpar cache", help="Force recarregar os dados do arquivo"):
+        load_data.clear()
+        st.rerun()
 
 # ─────────────────────────────────────────────
 # LOAD
@@ -453,6 +456,7 @@ with st.sidebar:
 with st.spinner("Processando dados…"):
     if uploaded is not None:
         file_bytes = uploaded.read()
+        load_data.clear()   # sempre limpa ao subir novo arquivo
     else:
         import urllib.request
         try:

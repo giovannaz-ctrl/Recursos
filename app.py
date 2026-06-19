@@ -2133,12 +2133,19 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 _name = f"{_cn.split()[0]} {_cn.split()[-1]}"
                 # Módulos do consultor (da planilha de recursos)
                 _mods_set = _cmods.get(_cn, set())
-                if _mods_set:
+                # _ALIAS pode ter agrupado módulos como "PP;QM;PM" — expandir
+                _mods_flat = set()
+                for _m in _mods_set:
+                    for _part in _m.split(";"):
+                        _p = _part.strip()
+                        if _p:
+                            _mods_flat.add(_p)
+                if _mods_flat:
                     _mods_html = " ".join(
                         f"<span style='display:inline-block;background:#f1f5f9;color:#475569;"
                         f"border-radius:3px;padding:1px 5px;font-size:.65rem;font-weight:600;"
                         f"margin:1px;white-space:nowrap;'>{m}</span>"
-                        for m in sorted(_mods_set)
+                        for m in sorted(_mods_flat)
                     )
                 else:
                     _mods_html = "<span style='color:#cbd5e1;font-size:.72rem;'>—</span>"

@@ -2212,12 +2212,20 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             )
         with _sf2:
             # Build flat module list from _cmods (expand semicolon aliases)
+            # raw names + their aliases so "FI" appears as filter option
             _all_slot_mods = sorted({
-                _m
+                _label
                 for mods in _cmods_raw.values()
                 for _m in mods
-                if _m
+                for _label in (_m, _ALIAS.get(_m, _m))
+                if _label and ";" not in _label
             })
+            # reset stale selections that no longer exist in options
+            if "slot_mod_filter" in st.session_state:
+                st.session_state["slot_mod_filter"] = [
+                    v for v in st.session_state["slot_mod_filter"]
+                    if v in _all_slot_mods
+                ]
             _f_slot_mods = st.multiselect(
                 "Filtrar por módulo",
                 _all_slot_mods,
@@ -2230,7 +2238,12 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 return False
             if _f_slot_mods:
                 _c_mods_raw_set = _cmods_raw.get(c, set())
-                if not any(m in _c_mods_raw_set for m in _f_slot_mods):
+                # also expand raw names through alias so filtering "FI" matches AP/AR/GL/AA
+                _c_mods_expanded = set()
+                for _rm in _c_mods_raw_set:
+                    _c_mods_expanded.add(_rm)
+                    _c_mods_expanded.add(_ALIAS.get(_rm, _rm))
+                if not any(m in _c_mods_expanded for m in _f_slot_mods):
                     return False
             return True
 

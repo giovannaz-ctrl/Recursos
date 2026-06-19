@@ -2109,16 +2109,42 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             _cs2[_c] = _cs2.get(_c, 0) + _SLOTS.get(_comp,1.5) * min(1.0, _sum_ded)
 
         def _bar2(slots, mx=_MAX):
-            n_fill = min(int(round(slots)), int(mx))
-            n_over = max(0, int(round(slots)) - int(mx))
-            n_free = max(0, int(mx) - n_fill)
             if slots > mx:        col = "#ef4444"; flag = "🔴"
             elif slots >= mx*0.9: col = "#f97316"; flag = "🟡"
             else:                 col = "#10b981"; flag = "🟢"
+
+            # SVG-based bar: each slot = one square (16×16), fractions painted precisely
+            _sq = 16   # square size px
+            _gap = 3   # gap between squares
+            _n_squares = int(mx)  # total squares = MAX slots (e.g. 2)
+            _svgs = []
+            for i in range(_n_squares):
+                _filled = max(0.0, min(1.0, slots - i))  # fraction of this square that is filled
+                _x = i * (_sq + _gap)
+                # background square (empty)
+                _svgs.append(f"<rect x='{_x}' y='0' width='{_sq}' height='{_sq}' rx='2' fill='#e2e8f0'/>")
+                if _filled > 0:
+                    _fill_w = round(_filled * _sq, 1)
+                    _fill_col = "#ef4444" if slots > mx else col
+                    _svgs.append(f"<rect x='{_x}' y='0' width='{_fill_w}' height='{_sq}' rx='2' fill='{_fill_col}'/>")
+
+            # Overflow squares (slots > mx)
+            _overflow = slots - mx
+            _ov_squares = int(_math.ceil(_overflow)) if _overflow > 0 else 0
+            for j in range(_ov_squares):
+                _filled_ov = max(0.0, min(1.0, _overflow - j))
+                _x = (_n_squares + j) * (_sq + _gap)
+                _svgs.append(f"<rect x='{_x}' y='0' width='{_sq}' height='{_sq}' rx='2' fill='#fecaca'/>")
+                if _filled_ov > 0:
+                    _fill_w = round(_filled_ov * _sq, 1)
+                    _svgs.append(f"<rect x='{_x}' y='0' width='{_fill_w}' height='{_sq}' rx='2' fill='#ef4444'/>")
+
+            _total_squares = _n_squares + _ov_squares
+            _svg_w = _total_squares * (_sq + _gap) - _gap
             blocks = (
-                f"<span style='color:{col};letter-spacing:2px;font-size:1rem;'>" + "■"*n_fill + "</span>"
-                + (f"<span style='color:#ef4444;letter-spacing:2px;font-size:1rem;'>" + "■"*n_over + "</span>" if n_over else "")
-                + f"<span style='color:#e2e8f0;letter-spacing:2px;font-size:1rem;'>" + "□"*n_free + "</span>"
+                f"<svg width='{_svg_w}' height='{_sq}' style='vertical-align:middle;display:inline-block;'>"
+                + "".join(_svgs)
+                + "</svg>"
             )
             return blocks, f"{slots:.1f}", flag, col
 

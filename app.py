@@ -2174,17 +2174,48 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
 
         # Segment consultants
         # Filter by consultant
-        _f_slot_cons = st.multiselect(
-            "Filtrar por consultor",
-            sorted(_cs2.keys()),
-            key="slot_cons_filter",
-            placeholder="Todos os consultores…"
-        )
+        _sf1, _sf2 = st.columns([3, 3])
+        with _sf1:
+            _f_slot_cons = st.multiselect(
+                "Filtrar por consultor",
+                sorted(_cs2.keys()),
+                key="slot_cons_filter",
+                placeholder="Todos os consultores…"
+            )
+        with _sf2:
+            # Build flat module list from _cmods (expand semicolon aliases)
+            _all_slot_mods = sorted({
+                _p.strip()
+                for mods in _cmods.values()
+                for _m in mods
+                for _p in _m.split(";")
+                if _p.strip()
+            })
+            _f_slot_mods = st.multiselect(
+                "Filtrar por módulo",
+                _all_slot_mods,
+                key="slot_mod_filter",
+                placeholder="Todos os módulos…"
+            )
 
-        _above  = sorted([c for c,s in _cs2.items() if s > _MAX and not _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
-        _at_lim = sorted([c for c,s in _cs2.items() if _MAX*0.9 <= s <= _MAX and not _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
-        _avail  = sorted([c for c,s in _cs2.items() if s < _MAX*0.9 and not _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
-        _juniors= sorted([c for c,s in _cs2.items() if _cjr.get(c,False) and (not _f_slot_cons or c in _f_slot_cons)], key=lambda c: -_cs2[c])
+        def _slot_match(c):
+            if _f_slot_cons and c not in _f_slot_cons:
+                return False
+            if _f_slot_mods:
+                _c_mods_flat = {
+                    _p.strip()
+                    for _m in _cmods.get(c, set())
+                    for _p in _m.split(";")
+                    if _p.strip()
+                }
+                if not any(m in _c_mods_flat for m in _f_slot_mods):
+                    return False
+            return True
+
+        _above  = sorted([c for c,s in _cs2.items() if s > _MAX and not _cjr.get(c,False) and _slot_match(c)], key=lambda c: -_cs2[c])
+        _at_lim = sorted([c for c,s in _cs2.items() if _MAX*0.9 <= s <= _MAX and not _cjr.get(c,False) and _slot_match(c)], key=lambda c: -_cs2[c])
+        _avail  = sorted([c for c,s in _cs2.items() if s < _MAX*0.9 and not _cjr.get(c,False) and _slot_match(c)], key=lambda c: -_cs2[c])
+        _juniors= sorted([c for c,s in _cs2.items() if _cjr.get(c,False) and _slot_match(c)], key=lambda c: -_cs2[c])
 
         _tab_above, _tab_at, _tab_avail, _tab_jr = st.tabs([
             f"🔴 Acima do limite ({len(_above)})",

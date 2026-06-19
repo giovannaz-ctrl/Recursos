@@ -368,7 +368,8 @@ def load_data(file_bytes: bytes):
 
     # Email column is "Unnamed: 1" when header row has no label
     email_col = next((c for c in df_rec_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
-    modulos   = [c for c in df_rec_raw.columns if c not in ("Consultor", email_col or "")]
+    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
+    modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
 
     rec_rows = []
     for _, row in df_rec_raw.iterrows():

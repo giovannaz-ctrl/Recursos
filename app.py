@@ -1835,7 +1835,8 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             _sr = str(_rr.get("Senioridade","")).strip().lower()
             if _em: _email_to_senior[_em] = _sr
 
-        _cmods = {}
+        _cmods     = {}   # alias-mapped  → used for vacancy matching
+        _cmods_raw = {}   # raw names     → used for display
         for _, _rr in df_rec.iterrows():
             _em   = str(_rr.get("Email","")).strip().lower()
             _cn   = _rr.get("Consultor","")
@@ -1844,9 +1845,12 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             if not _canon or _canon == "nan": continue
             _cjr[_canon] = (_sr == "junior")
             for _m in (_rr.get("Especialidades") or []):
-                _m_mapped = _ALIAS.get(_m.strip(), _m.strip())
-                if _canon not in _cmods: _cmods[_canon] = set()
+                _m_raw    = _m.strip()
+                _m_mapped = _ALIAS.get(_m_raw, _m_raw)
+                if _canon not in _cmods:     _cmods[_canon]     = set()
+                if _canon not in _cmods_raw: _cmods_raw[_canon] = set()
                 _cmods[_canon].add(_m_mapped)
+                _cmods_raw[_canon].add(_m_raw)
 
         # Also enrich cjr with seniority from recursos via email
         for _, _r in df1.iterrows():
@@ -2162,14 +2166,8 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                              if _cjr.get(_cn, False) else "")
                 _name = f"{_cn.split()[0]} {_cn.split()[-1]}"
                 # Módulos do consultor (da planilha de recursos)
-                _mods_set = _cmods.get(_cn, set())
-                # _ALIAS pode ter agrupado módulos como "PP;QM;PM" — expandir
-                _mods_flat = set()
-                for _m in _mods_set:
-                    for _part in _m.split(";"):
-                        _p = _part.strip()
-                        if _p:
-                            _mods_flat.add(_p)
+                # Use raw module names (no alias) for display
+                _mods_flat = set(_cmods_raw.get(_cn, set()))
                 if _mods_flat:
                     _mods_html = " ".join(
                         f"<span style='display:inline-block;background:#f1f5f9;color:#475569;"
@@ -2215,11 +2213,10 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         with _sf2:
             # Build flat module list from _cmods (expand semicolon aliases)
             _all_slot_mods = sorted({
-                _p.strip()
-                for mods in _cmods.values()
+                _m
+                for mods in _cmods_raw.values()
                 for _m in mods
-                for _p in _m.split(";")
-                if _p.strip()
+                if _m
             })
             _f_slot_mods = st.multiselect(
                 "Filtrar por módulo",
@@ -2232,13 +2229,8 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             if _f_slot_cons and c not in _f_slot_cons:
                 return False
             if _f_slot_mods:
-                _c_mods_flat = {
-                    _p.strip()
-                    for _m in _cmods.get(c, set())
-                    for _p in _m.split(";")
-                    if _p.strip()
-                }
-                if not any(m in _c_mods_flat for m in _f_slot_mods):
+                _c_mods_raw_set = _cmods_raw.get(c, set())
+                if not any(m in _c_mods_raw_set for m in _f_slot_mods):
                     return False
             return True
 

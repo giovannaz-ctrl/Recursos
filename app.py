@@ -14,23 +14,69 @@ from io import BytesIO
 import json, os
 
 # ─────────────────────────────────────────────
-# ENTRY DATES — persist in datas_entrada.json
+# ENTRY DATES — persist in GitHub via API
+# Repo  : https://github.com/giovannaz-ctrl/Recursos
+# File  : Data_entrada_saida.json
+# Secret: GITHUB_PAT  (set in Streamlit Cloud → Settings → Secrets)
 # ─────────────────────────────────────────────
-_DATAS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datas_entrada.json")
+_GH_REPO     = "giovannaz-ctrl/Recursos"
+_GH_FILE     = "Data_entrada_saida.json"
+_GH_API      = f"https://api.github.com/repos/{_GH_REPO}/contents/{_GH_FILE}"
+_GH_BRANCH   = "main"
 
+def _gh_headers():
+    pat = st.secrets.get("GITHUB_PAT", "")
+    return {
+        "Authorization": f"token {pat}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+@st.cache_data(ttl=60, show_spinner=False)
 def _load_datas():
+    """Load JSON from GitHub. Cached for 60s to avoid rate limits."""
     try:
-        with open(_DATAS_FILE, "r", encoding="utf-8") as _f:
-            return json.load(_f)
+        import urllib.request, base64
+        req = urllib.request.Request(_GH_API, headers=_gh_headers())
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+        return json.loads(base64.b64decode(data["content"]).decode("utf-8"))
     except Exception:
         return {}
 
 def _save_datas(d):
+    """Write JSON back to GitHub (create or update)."""
     try:
-        with open(_DATAS_FILE, "w", encoding="utf-8") as _f:
-            json.dump(d, _f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+        import urllib.request, base64
+        content_bytes = json.dumps(d, ensure_ascii=False, indent=2).encode("utf-8")
+        content_b64   = base64.b64encode(content_bytes).decode()
+
+        # Get current SHA (needed for update)
+        sha = None
+        try:
+            req = urllib.request.Request(_GH_API, headers=_gh_headers())
+            with urllib.request.urlopen(req) as resp:
+                sha = json.loads(resp.read().decode()).get("sha")
+        except Exception:
+            pass  # file doesn't exist yet → create
+
+        payload = {
+            "message": "update Data_entrada_saida.json",
+            "content": content_b64,
+            "branch":  _GH_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+
+        req = urllib.request.Request(
+            _GH_API,
+            data=json.dumps(payload).encode(),
+            headers={**_gh_headers(), "Content-Type": "application/json"},
+            method="PUT",
+        )
+        urllib.request.urlopen(req)
+        _load_datas.clear()   # invalidate cache after write
+    except Exception as e:
+        st.warning(f"Não foi possível salvar no GitHub: {e}")
 
 def _entry_key(consultor, projeto):
     return f"{consultor}|{projeto}"

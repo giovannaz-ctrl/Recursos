@@ -741,106 +741,21 @@ with tab1:
         display = dft[["Consultor","Cliente","Projeto","Módulo"]].copy()
         display.rename(columns={"Consultor":"Consultor Principal"}, inplace=True)
 
-    # ── Controle de Datas ────────────────────────────────────────
-    st.markdown('<div class="section-title">📅 Controle de Datas (Entrada / Saída)</div>', unsafe_allow_html=True)
+    # ── Tabela Detalhada + Datas ─────────────────────────────────
+    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
 
     _datas = st.session_state["datas_entrada"]
 
-    # Build rows: one per (Consultor Principal, Projeto)
-    _entry_rows = (
-        display[["Cliente","Projeto","Módulo","Consultor Principal"]]
-        .drop_duplicates()
-        .sort_values(["Consultor Principal","Projeto"])
-        .reset_index(drop=True)
-    )
+    # Enrich display with Entrada / Saída columns
+    def _get_data(row, field):
+        _rec = _datas.get(_entry_key(row.get("Consultor Principal",""), row.get("Projeto","")), {})
+        if isinstance(_rec, dict):
+            return _rec.get(field, "") or ""
+        return _rec if field == "entrada" else ""
 
-    # ── HTML table ───────────────────────────────────────────────
-    _hdr = (
-        "<div style='overflow-x:auto;'>"
-        "<table style='width:100%;border-collapse:collapse;font-size:.82rem;'>"
-        "<thead><tr style='background:#f8fafc;border-bottom:2px solid #e2e8f0;'>"
-        "<th style='padding:6px 10px;color:#475569;font-weight:600;text-align:left;min-width:160px;'>Consultor</th>"
-        "<th style='padding:6px 10px;color:#475569;font-weight:600;text-align:left;'>Projeto</th>"
-        "<th style='padding:6px 10px;color:#475569;font-weight:600;text-align:left;'>Módulo</th>"
-        "<th style='padding:6px 10px;color:#475569;font-weight:600;text-align:center;min-width:120px;'>Entrada</th>"
-        "<th style='padding:6px 10px;color:#475569;font-weight:600;text-align:center;min-width:120px;'>Saída</th>"
-        "</tr></thead><tbody>"
-    )
-    _empty = "<span style='color:#cbd5e1;font-size:.78rem;'>—</span>"
-    _body = ""
-    for _, _er in _entry_rows.iterrows():
-        _cons = _er["Consultor Principal"]
-        _proj = _er["Projeto"]
-        _mod  = _er["Módulo"]
-        _key  = _entry_key(_cons, _proj)
-        _rec  = _datas.get(_key, {})
-        _entrada_str = _rec.get("entrada", "") if isinstance(_rec, dict) else _rec or ""
-        _saida_str   = _rec.get("saida",   "") if isinstance(_rec, dict) else ""
-        _cell_e = f"<span style='font-size:.8rem;color:#1e293b;'>{_entrada_str}</span>" if _entrada_str else _empty
-        _cell_s = f"<span style='font-size:.8rem;color:#64748b;'>{_saida_str}</span>"   if _saida_str  else _empty
-        _body += (
-            f"<tr style='border-bottom:1px solid #f1f5f9;'>"
-            f"<td style='padding:6px 10px;white-space:nowrap;color:#1e293b;font-weight:500;'>{_cons}</td>"
-            f"<td style='padding:6px 10px;color:#475569;'>{_proj}</td>"
-            f"<td style='padding:6px 10px;color:#64748b;'>{_mod}</td>"
-            f"<td style='padding:6px 10px;text-align:center;'>{_cell_e}</td>"
-            f"<td style='padding:6px 10px;text-align:center;'>{_cell_s}</td>"
-            f"</tr>"
-        )
-    st.markdown(_hdr + _body + "</tbody></table></div>", unsafe_allow_html=True)
+    display["📅 Entrada"] = display.apply(lambda r: _get_data(r, "entrada"), axis=1)
+    display["🏁 Saída"]   = display.apply(lambda r: _get_data(r, "saida"),   axis=1)
 
-    # ── Editor ───────────────────────────────────────────────────
-    st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-    _ed1, _ed2 = st.columns([2, 3])
-    with _ed1:
-        _sel_cons_dt = st.selectbox(
-            "Consultor",
-            sorted(_entry_rows["Consultor Principal"].dropna().unique()),
-            key="dt_sel_cons",
-        )
-    with _ed2:
-        _projs_for_cons = sorted(
-            _entry_rows[_entry_rows["Consultor Principal"] == _sel_cons_dt]["Projeto"].unique()
-        )
-        _sel_proj_dt = st.selectbox("Projeto", _projs_for_cons, key="dt_sel_proj")
-
-    _key_edit = _entry_key(_sel_cons_dt, _sel_proj_dt)
-    _rec_edit = _datas.get(_key_edit, {})
-    if not isinstance(_rec_edit, dict):
-        _rec_edit = {"entrada": _rec_edit or "", "saida": ""}
-
-    _cur_entrada = _rec_edit.get("entrada", "")
-    _cur_saida   = _rec_edit.get("saida",   "")
-
-    _dc1, _dc2 = st.columns(2)
-    with _dc1:
-        _val_e = datetime.strptime(_cur_entrada, "%Y-%m-%d").date() if _cur_entrada else None
-        _nova_entrada = st.date_input("📅 Data de entrada", value=_val_e, key="dt_entrada", format="DD/MM/YYYY")
-    with _dc2:
-        _val_s = datetime.strptime(_cur_saida, "%Y-%m-%d").date() if _cur_saida else None
-        _nova_saida = st.date_input("📅 Data de saída", value=_val_s, key="dt_saida", format="DD/MM/YYYY")
-
-    _sb1, _sb2, _ = st.columns([1, 1, 4])
-    with _sb1:
-        if st.button("💾 Salvar", key="dt_save"):
-            _datas[_key_edit] = {
-                "entrada": str(_nova_entrada) if _nova_entrada else "",
-                "saida":   str(_nova_saida)   if _nova_saida   else "",
-            }
-            st.session_state["datas_entrada"] = _datas
-            _save_datas(_datas)
-            st.success(f"Salvo: {_sel_cons_dt} · {_sel_proj_dt}")
-            st.rerun()
-    with _sb2:
-        if (_cur_entrada or _cur_saida) and st.button("🗑 Limpar", key="dt_del"):
-            _datas.pop(_key_edit, None)
-            st.session_state["datas_entrada"] = _datas
-            _save_datas(_datas)
-            st.success("Datas removidas.")
-            st.rerun()
-
-    # ── Original detailed table ───────────────────────────────────
-    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
     st.dataframe(display, use_container_width=True, hide_index=True,
                  column_config={
                      "Cliente":              st.column_config.TextColumn("Cliente",              width="small"),
@@ -849,7 +764,54 @@ with tab1:
                      "Módulo":               st.column_config.TextColumn("Módulo",               width="medium"),
                      "Consultor Principal":  st.column_config.TextColumn("Consultor Principal",  width="medium"),
                      "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",            width="medium"),
+                     "📅 Entrada":           st.column_config.TextColumn("📅 Entrada",           width="small"),
+                     "🏁 Saída":             st.column_config.TextColumn("🏁 Saída",             width="small"),
                  })
+
+    # ── Editor de datas ──────────────────────────────────────────
+    with st.expander("✏️ Registrar / alterar datas de entrada e saída", expanded=False):
+        _ed1, _ed2 = st.columns([2, 3])
+        with _ed1:
+            _cons_opts = sorted(display["Consultor Principal"].dropna().unique())
+            _sel_cons_dt = st.selectbox("Consultor", _cons_opts, key="dt_sel_cons")
+        with _ed2:
+            _projs_for_cons = sorted(display[display["Consultor Principal"] == _sel_cons_dt]["Projeto"].unique())
+            _sel_proj_dt = st.selectbox("Projeto", _projs_for_cons, key="dt_sel_proj")
+
+        _key_edit = _entry_key(_sel_cons_dt, _sel_proj_dt)
+        _rec_edit = _datas.get(_key_edit, {})
+        if not isinstance(_rec_edit, dict):
+            _rec_edit = {"entrada": _rec_edit or "", "saida": ""}
+
+        _cur_entrada = _rec_edit.get("entrada", "")
+        _cur_saida   = _rec_edit.get("saida",   "")
+
+        _dc1, _dc2 = st.columns(2)
+        with _dc1:
+            _val_e = datetime.strptime(_cur_entrada, "%Y-%m-%d").date() if _cur_entrada else None
+            _nova_entrada = st.date_input("📅 Data de entrada", value=_val_e, key="dt_entrada", format="DD/MM/YYYY")
+        with _dc2:
+            _val_s = datetime.strptime(_cur_saida, "%Y-%m-%d").date() if _cur_saida else None
+            _nova_saida = st.date_input("🏁 Data de saída", value=_val_s, key="dt_saida", format="DD/MM/YYYY")
+
+        _sb1, _sb2, _ = st.columns([1, 1, 4])
+        with _sb1:
+            if st.button("💾 Salvar", key="dt_save"):
+                _datas[_key_edit] = {
+                    "entrada": str(_nova_entrada) if _nova_entrada else "",
+                    "saida":   str(_nova_saida)   if _nova_saida   else "",
+                }
+                st.session_state["datas_entrada"] = _datas
+                _save_datas(_datas)
+                st.success(f"Salvo: {_sel_cons_dt} · {_sel_proj_dt}")
+                st.rerun()
+        with _sb2:
+            if (_cur_entrada or _cur_saida) and st.button("🗑 Limpar", key="dt_del"):
+                _datas.pop(_key_edit, None)
+                st.session_state["datas_entrada"] = _datas
+                _save_datas(_datas)
+                st.success("Datas removidas.")
+                st.rerun()
 
     st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
                        file_name="alocacao_consultores.xlsx",

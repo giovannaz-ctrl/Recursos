@@ -787,8 +787,9 @@ with tab1:
         display = dft[["Consultor","Cliente","Projeto","Módulo"]].copy()
         display.rename(columns={"Consultor":"Consultor Principal"}, inplace=True)
 
-    # ── Tabela Detalhada + Datas ─────────────────────────────────
+    # ── Tabela Detalhada + Datas editáveis ───────────────────────
     st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
+    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
 
     _datas = st.session_state["datas_entrada"]
 
@@ -802,62 +803,54 @@ with tab1:
     display["📅 Entrada"] = display.apply(lambda r: _get_data(r, "entrada"), axis=1)
     display["🏁 Saída"]   = display.apply(lambda r: _get_data(r, "saida"),   axis=1)
 
-    st.dataframe(display, use_container_width=True, hide_index=True,
-                 column_config={
-                     "Cliente":              st.column_config.TextColumn("Cliente",              width="small"),
-                     "Projeto":              st.column_config.TextColumn("Projeto",              width="large"),
-                     "Fase":                 st.column_config.TextColumn("Fase",                 width="small"),
-                     "Módulo":               st.column_config.TextColumn("Módulo",               width="medium"),
-                     "Consultor Principal":  st.column_config.TextColumn("Consultor Principal",  width="medium"),
-                     "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",            width="medium"),
-                     "📅 Entrada":           st.column_config.TextColumn("📅 Entrada",           width="small"),
-                     "🏁 Saída":             st.column_config.TextColumn("🏁 Saída",             width="small"),
-                 })
+    # Convert date strings to date objects for the editor
+    def _to_date(s):
+        try: return datetime.strptime(s, "%Y-%m-%d").date() if s else None
+        except: return None
 
-    # ── Editor de datas ──────────────────────────────────────────
-    with st.expander("✏️ Registrar / alterar datas de entrada e saída", expanded=False):
-        _ed1, _ed2 = st.columns([2, 3])
-        with _ed1:
-            _cons_opts = sorted(display["Consultor Principal"].dropna().unique())
-            _sel_cons_dt = st.selectbox("Consultor", _cons_opts, key="dt_sel_cons")
-        with _ed2:
-            _projs_for_cons = sorted(display[display["Consultor Principal"] == _sel_cons_dt]["Projeto"].unique())
-            _sel_proj_dt = st.selectbox("Projeto", _projs_for_cons, key="dt_sel_proj")
+    display["📅 Entrada"] = display["📅 Entrada"].apply(_to_date)
+    display["🏁 Saída"]   = display["🏁 Saída"].apply(_to_date)
 
-        _key_edit = _entry_key(_sel_cons_dt, _sel_proj_dt)
-        _rec_edit = _datas.get(_key_edit, {})
-        if not isinstance(_rec_edit, dict):
-            _rec_edit = {"entrada": _rec_edit or "", "saida": ""}
+    _edited = st.data_editor(
+        display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cliente":              st.column_config.TextColumn("Cliente",             width="small",  disabled=True),
+            "Projeto":              st.column_config.TextColumn("Projeto",             width="large",  disabled=True),
+            "Fase":                 st.column_config.TextColumn("Fase",                width="small",  disabled=True),
+            "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
+            "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
+            "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
+            "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
+            "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
+        },
+        key="tabela_detalhada_editor",
+    )
 
-        _cur_entrada = _rec_edit.get("entrada", "")
-        _cur_saida   = _rec_edit.get("saida",   "")
-
-        _dc1, _dc2 = st.columns(2)
-        with _dc1:
-            _val_e = datetime.strptime(_cur_entrada, "%Y-%m-%d").date() if _cur_entrada else None
-            _nova_entrada = st.date_input("📅 Data de entrada", value=_val_e, key="dt_entrada", format="DD/MM/YYYY")
-        with _dc2:
-            _val_s = datetime.strptime(_cur_saida, "%Y-%m-%d").date() if _cur_saida else None
-            _nova_saida = st.date_input("🏁 Data de saída", value=_val_s, key="dt_saida", format="DD/MM/YYYY")
-
-        _sb1, _sb2, _ = st.columns([1, 1, 4])
-        with _sb1:
-            if st.button("💾 Salvar", key="dt_save"):
-                _datas[_key_edit] = {
-                    "entrada": str(_nova_entrada) if _nova_entrada else "",
-                    "saida":   str(_nova_saida)   if _nova_saida   else "",
-                }
-                st.session_state["datas_entrada"] = _datas
-                _save_datas(_datas)
-                st.success(f"Salvo: {_sel_cons_dt} · {_sel_proj_dt}")
-                st.rerun()
-        with _sb2:
-            if (_cur_entrada or _cur_saida) and st.button("🗑 Limpar", key="dt_del"):
-                _datas.pop(_key_edit, None)
-                st.session_state["datas_entrada"] = _datas
-                _save_datas(_datas)
-                st.success("Datas removidas.")
-                st.rerun()
+    # Detect changes and save
+    if st.button("💾 Salvar datas", key="dt_save_table"):
+        _changed = False
+        for _, _row in _edited.iterrows():
+            _cons = _row.get("Consultor Principal", "")
+            _proj = _row.get("Projeto", "")
+            if not _cons or not _proj: continue
+            _key  = _entry_key(_cons, _proj)
+            _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
+            _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
+            _cur  = _datas.get(_key, {})
+            _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
+            _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
+            if _e != _cur_e or _s != _cur_s:
+                _datas[_key] = {"entrada": _e, "saida": _s}
+                _changed = True
+        if _changed:
+            st.session_state["datas_entrada"] = _datas
+            _save_datas(_datas)
+            st.success("Datas salvas!")
+            st.rerun()
+        else:
+            st.info("Nenhuma alteração detectada.")
 
     st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
                        file_name="alocacao_consultores.xlsx",

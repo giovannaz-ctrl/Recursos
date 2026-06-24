@@ -83,6 +83,7 @@ def _entry_key(consultor, projeto):
 
 
 
+
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
@@ -422,7 +423,7 @@ def load_data(file_bytes: bytes):
         h_fim   = _time_to_float(hf_raw)
         horas   = round(h_fim - h_ini, 2) if (h_ini is not None and h_fim is not None) else 0.0
         client  = get_client_from_project(projeto)
-        semana  = f"W{data.isocalendar()[1]:02d}/{data.year}" if data else ""
+        semana  = f"W{data.isocalendar()[1]:02d}/{data.year}" if pd.notna(data) and data else ""
 
         at_rows.append({
             "Consultor": name3, "Email": email3, "Projeto": projeto, "Cliente": client,
@@ -528,6 +529,7 @@ with st.sidebar:
 if "datas_entrada" not in st.session_state:
     st.session_state["datas_entrada"] = _load_datas()
 
+
 with st.spinner("Processando dados…"):
     if uploaded is not None:
         file_bytes = uploaded.read()
@@ -541,6 +543,7 @@ with st.spinner("Processando dados…"):
             st.error(f"Não foi possível carregar o arquivo do repositório: {e}")
             st.stop()
     df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring = load_data(file_bytes)
+
 
 # Build project→color map (shared across tabs)
 all_projects = sorted(set(df1["Projeto"]) | set(df2["Projeto"]) | set(df3["Projeto"]))
@@ -1566,7 +1569,7 @@ with tab5:
         st.markdown('<div class="section-title">Matriz de Especialidades</div>',
                     unsafe_allow_html=True)
 
-        # ── Filtros e ordenação ─────────────────────────────────────
+        # ── Filtros e ordenação ──────────────────────────────────
         _mxf1, _mxf2 = st.columns([3, 2])
         with _mxf1:
             _mx_cons_filter = st.multiselect(
@@ -1589,18 +1592,16 @@ with tab5:
                 index=0,
             )
 
-        # Apply consultant filter
         dfr_mx = dfr.copy()
         if _mx_cons_filter:
             dfr_mx = dfr_mx[dfr_mx["Consultor"].isin(_mx_cons_filter)]
 
-        # Apply sort
         if _mx_sort_col == "Consultor (A→Z)":
             dfr_mx = dfr_mx.sort_values("Consultor", ascending=True)
         elif _mx_sort_col == "Consultor (Z→A)":
             dfr_mx = dfr_mx.sort_values("Consultor", ascending=False)
         elif _mx_sort_col == "Status":
-            dfr_mx = dfr_mx.sort_values(["Status", "Consultor"])
+            dfr_mx = dfr_mx.sort_values(["Status","Consultor"])
         elif _mx_sort_col == "Especialidades (mais)":
             dfr_mx["_n_esp"] = dfr_mx["Especialidades"].apply(len)
             dfr_mx = dfr_mx.sort_values("_n_esp", ascending=False).drop(columns=["_n_esp"])
@@ -1610,11 +1611,11 @@ with tab5:
         elif _mx_sort_col.startswith("↑ "):
             _sort_mod = _mx_sort_col[2:]
             dfr_mx["_has"] = dfr_mx["Especialidades"].apply(lambda s: 1 if _sort_mod in s else 0)
-            dfr_mx = dfr_mx.sort_values(["_has", "Consultor"], ascending=[False, True]).drop(columns=["_has"])
+            dfr_mx = dfr_mx.sort_values(["_has","Consultor"], ascending=[False,True]).drop(columns=["_has"])
         elif _mx_sort_col.startswith("↓ "):
             _sort_mod = _mx_sort_col[2:]
             dfr_mx["_has"] = dfr_mx["Especialidades"].apply(lambda s: 1 if _sort_mod in s else 0)
-            dfr_mx = dfr_mx.sort_values(["_has", "Consultor"], ascending=[True, True]).drop(columns=["_has"])
+            dfr_mx = dfr_mx.sort_values(["_has","Consultor"], ascending=[True,True]).drop(columns=["_has"])
 
         dfr_mx = dfr_mx.reset_index(drop=True)
 
@@ -1622,7 +1623,6 @@ with tab5:
         _mx_page_size = 15
         _mx_total     = len(dfr_mx)
         _mx_n_pages   = max(1, -(-_mx_total // _mx_page_size))
-
         if "mx_page" not in st.session_state:
             st.session_state["mx_page"] = 0
         if st.session_state["mx_page"] >= _mx_n_pages:
@@ -1630,70 +1630,62 @@ with tab5:
 
         _mp_left, _mp_mid, _mp_right = st.columns([1, 8, 1])
         with _mp_left:
-            if st.button("◄", key="mx_prev") and st.session_state["mx_page"] > 0:
+            if st.button("◀", key="mx_prev") and st.session_state["mx_page"] > 0:
                 st.session_state["mx_page"] -= 1
                 st.rerun()
         with _mp_right:
-            if st.button("►", key="mx_next") and st.session_state["mx_page"] < _mx_n_pages - 1:
+            if st.button("▶", key="mx_next") and st.session_state["mx_page"] < _mx_n_pages - 1:
                 st.session_state["mx_page"] += 1
                 st.rerun()
         with _mp_mid:
             _filter_info = f" · mostrando {_mx_total} de {len(dfr)}" if _mx_cons_filter else f" · {_mx_total} consultores"
             st.markdown(
-                f"<div style='text-align:center; padding:.3rem 0; font-size:.85rem; color:#94a3b8;'>"
+                f"<div style='text-align:center;padding:.3rem 0;font-size:.85rem;color:#94a3b8;'>"
                 f"Página {st.session_state['mx_page']+1} de {_mx_n_pages}{_filter_info}</div>",
                 unsafe_allow_html=True,
             )
 
-        _mx_start = st.session_state["mx_page"] * _mx_page_size
-        dfr_page  = dfr_mx.iloc[_mx_start:_mx_start + _mx_page_size]
+        _mx_start_idx = st.session_state["mx_page"] * _mx_page_size
+        dfr_page = dfr_mx.iloc[_mx_start_idx:_mx_start_idx + _mx_page_size]
 
-        # Build matrix HTML — highlight sorted column
-        _sorted_mod = (
-            _mx_sort_col[2:] if _mx_sort_col.startswith(("↑ ", "↓ ")) else None
-        )
-        _sort_arrow = {
-            f"↑ {_sorted_mod}": " ↑",
-            f"↓ {_sorted_mod}": " ↓",
-        }.get(_mx_sort_col, "") if _sorted_mod else ""
+        _sorted_mod = _mx_sort_col[2:] if _mx_sort_col.startswith(("↑ ","↓ ")) else None
 
         def _mx_th(m):
             _is_sort = m == _sorted_mod
-            _arrow = _sort_arrow if _is_sort else ""
-            _bg = "background:#fff7ed; color:#f97316;" if _is_sort else ""
+            _bg = "background:#fff7ed;color:#f97316;" if _is_sort else ""
+            _arrow = (" ↑" if _mx_sort_col == f"↑ {m}" else (" ↓" if _mx_sort_col == f"↓ {m}" else "")) if _is_sort else ""
             return (
-                f"<th style='padding:5px 8px; font-size:.72rem; font-weight:600; color:#475569;"
-                f"writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap;"
-                f"min-width:32px; {_bg}'>{m}{_arrow}</th>"
+                f"<th style='padding:5px 8px;font-size:.72rem;font-weight:600;color:#475569;"
+                f"writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;"
+                f"min-width:32px;{_bg}'>{m}{_arrow}</th>"
             )
 
         header_cells = "".join(_mx_th(m) for m in all_modulos)
-
-        status_color = {"Alocado": "#f59e0b", "Disponível": "#10b981"}
-        status_bg    = {"Alocado": "#fffbeb", "Disponível": "#f0fdf4"}
+        status_color = {"Alocado":"#f59e0b","Disponível":"#10b981"}
+        status_bg    = {"Alocado":"#fffbeb","Disponível":"#f0fdf4"}
 
         body_rows = ""
         for _, row in dfr_page.iterrows():
-            sc = status_color.get(row["Status"], "#6366f1")
-            sb = status_bg.get(row["Status"], "#f8fafc")
+            sc = status_color.get(row["Status"],"#6366f1")
+            sb = status_bg.get(row["Status"],"#f8fafc")
             badge = (
-                f"<span style='background:{sb}; color:{sc}; border:1px solid {sc};"
-                f"border-radius:4px; padding:1px 7px; font-size:.7rem; font-weight:600;"
+                f"<span style='background:{sb};color:{sc};border:1px solid {sc};"
+                f"border-radius:4px;padding:1px 7px;font-size:.7rem;font-weight:600;"
                 f"white-space:nowrap;'>{row['Status']}</span>"
             )
             mod_cells = "".join(
                 (
-                    f"<td style='text-align:center; padding:4px;"
+                    f"<td style='text-align:center;padding:4px;"
                     f"{'background:#fff7ed;' if m == _sorted_mod else ''}'>"
-                    f"{'<span style="color:#f97316; font-size:1rem;">&#9679;</span>' if m in row['Especialidades'] else '<span style="color:#e2e8f0;">&#xB7;</span>'}"
+                    f"{'<span style="color:#f97316;font-size:1rem;">&#9679;</span>' if m in row['Especialidades'] else '<span style="color:#e2e8f0;">&#183;</span>'}"
                     f"</td>"
                 )
                 for m in all_modulos
             )
             body_rows += (
-                f"<tr style='border-bottom:1px solid #f1f5f9; background:white;'>"
-                f"<td style='padding:6px 10px; font-size:.82rem; white-space:nowrap; color:#1e293b;"
-                f"font-weight:500; min-width:180px;'>{row['Consultor']}</td>"
+                f"<tr style='border-bottom:1px solid #f1f5f9;background:white;'>"
+                f"<td style='padding:6px 10px;font-size:.82rem;white-space:nowrap;color:#1e293b;"
+                f"font-weight:500;min-width:180px;'>{row['Consultor']}</td>"
                 f"<td style='padding:6px 10px;'>{badge}</td>"
                 f"{mod_cells}"
                 f"</tr>"
@@ -1701,11 +1693,11 @@ with tab5:
 
         st.markdown(f"""
         <div style="overflow-x:auto;">
-        <table style="border-collapse:collapse; width:100%; font-size:.82rem;">
+        <table style="border-collapse:collapse;width:100%;font-size:.82rem;">
           <thead>
-            <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
-              <th style="padding:8px 10px; text-align:left; color:#475569; font-weight:600; min-width:180px;">Consultor</th>
-              <th style="padding:8px 10px; text-align:left; color:#475569; font-weight:600; min-width:100px;">Status</th>
+            <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+              <th style="padding:8px 10px;text-align:left;color:#475569;font-weight:600;min-width:180px;">Consultor</th>
+              <th style="padding:8px 10px;text-align:left;color:#475569;font-weight:600;min-width:100px;">Status</th>
               {header_cells}
             </tr>
           </thead>
@@ -1713,10 +1705,11 @@ with tab5:
         </table>
         </div>
         <div style='font-size:.73rem;color:#94a3b8;margin-top:.4rem;'>
-        💡 Use <b>Ordenar por</b> ↑  para ver quem tem determinado módulo no topo &nbsp;·&nbsp;
+        💡 Use <b>Ordenar por</b> ↑ para ver quem tem determinado módulo no topo &nbsp;·&nbsp;
         A coluna ordenada fica destacada em laranja
         </div>
         """, unsafe_allow_html=True)
+
 
         # ── Bar chart: consultores por especialidade ──────────────
         st.markdown('<div class="section-title">Consultores por Especialidade</div>',

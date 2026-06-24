@@ -1231,6 +1231,49 @@ with tab4:
                 unsafe_allow_html=True,
             )
 
+        # ── Quem não apontou esta semana ────────────────────────
+        st.markdown('<div class="section-title">⚠️ Consultores sem Apontamento na Semana</div>',
+                    unsafe_allow_html=True)
+
+        _apontaram_emails = set(
+            str(r["Email"]).strip().lower()
+            for _, r in dfa.iterrows()
+            if str(r.get("Email","")).strip()
+        )
+
+        _nao_apontaram = sorted([
+            (str(_rr.get("Consultor","")).strip(), str(_rr.get("Email","")).strip().lower())
+            for _, _rr in df_rec.iterrows()
+            if str(_rr.get("Consultor","")).strip()
+            and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
+            and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
+            and str(_rr.get("Email","")).strip() not in ("","nan","nat")
+        ], key=lambda x: x[0])
+
+        if not _nao_apontaram:
+            st.success("✅ Todos os consultores apontaram atividades esta semana!")
+        else:
+            _na_cols = st.columns([1, 3])
+            with _na_cols[0]:
+                st.markdown(
+                    f"<div style='background:#fff7ed;border:1px solid #f97316;border-radius:8px;"
+                    f"padding:.8rem 1rem;text-align:center;'>"
+                    f"<span style='font-size:1.8rem;font-weight:700;color:#f97316;'>{len(_nao_apontaram)}</span>"
+                    f"<br><span style='font-size:.72rem;color:#9a3412;font-weight:600;'>SEM APONTAMENTO</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with _na_cols[1]:
+                _badges = "".join(
+                    f"<span style='display:inline-block;background:#f1f5f9;color:#1e293b;"
+                    f"border-radius:4px;padding:3px 10px;font-size:.78rem;margin:2px 3px;"
+                    f"white-space:nowrap;'>{nome}</span>"
+                    for nome, _ in _nao_apontaram
+                )
+                st.markdown(f"<div style='line-height:2;'>{_badges}</div>", unsafe_allow_html=True)
+
+        st.markdown("---")
+
         st.markdown('<div class="section-title">Gantt da Semana por Consultor</div>', unsafe_allow_html=True)
 
         # Check if there are workshops this week even if no activities

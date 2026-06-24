@@ -2145,30 +2145,18 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 _n_hire_v += 1
                 _action_html = "<span style='color:#ef4444;font-weight:600;'>🔴 Contratar</span> — sem candidato disponível"
                 _hire_rows.append((f"{_fase_b} {_proj_short}", _perf, f"{_comp} ×{_ded}", f"{_sv:.1f}", _action_html))
-
-        # ── Compute module summary BEFORE KPIs so we can show total hire count ──
-        _mod_hire_count_pre = {}
-        for _hr in _hire_rows:
-            _perf_h = _hr[1]
-            _slots_h = float(_hr[3]) if _hr[3] else 0
-            for _pm in str(_perf_h).split(";"):
-                _mod_h = _mk(_pm.strip())
-                if _mod_h:
-                    _mod_hire_count_pre[_mod_h] = _mod_hire_count_pre.get(_mod_h, 0.0) + _slots_h / len([m for m in str(_perf_h).split(";") if m.strip()])
-        _total_hire_kpi = sum(_math.ceil(gap / _MAX) for gap in _mod_hire_count_pre.values() if gap > 0)
-        _n_mods_kpi = len([m for m, g in _mod_hire_count_pre.items() if _math.ceil(g / _MAX) > 0])
-
-        # KPIs — unified view
+        # KPIs — lógica: vagas abertas - redistribuições = a contratar
+        _n_total_vagas = _n_redist_v + _n_hire_v
         st.markdown(f"""
         <div class="kpi-grid">
-            {kpi_html(_n_redist_v,      "♻️ Redistribuições possíveis", "green")}
-            {kpi_html(_n_hire_v,        "🔴 Posições sem candidato",    "rose")}
-            {kpi_html(_total_hire_kpi,  "👤 Pessoas a contratar",       "amber")}
-            {kpi_html(_n_mods_kpi,      "📌 Módulos com gap",           "")}
+            {kpi_html(_n_total_vagas, "📋 Vagas em aberto",           "rose")}
+            {kpi_html(_n_redist_v,    "♻️ Redistribuições possíveis", "green")}
+            {kpi_html(_n_hire_v,      "🔴 A contratar",               "amber")}
         </div>
         <div style='font-size:.75rem;color:#94a3b8;margin-bottom:1rem;'>
-        💡 <b>Posições sem candidato</b> = linhas de vagas do Cockpit sem alocação
-        · <b>Pessoas a contratar</b> = pessoas necessárias (slots gap ÷ {_MAX} por módulo)
+        💡 <b>Vagas em aberto</b> = posições sem consultor no Cockpit
+        · <b>Redistribuições</b> = cobertas por consultores disponíveis
+        · <b>A contratar</b> = vagas sem candidato interno
         </div>
         """, unsafe_allow_html=True)
 

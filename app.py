@@ -1232,45 +1232,84 @@ with tab4:
             )
 
         # ── Quem não apontou esta semana ────────────────────────
-        st.markdown('<div class="section-title">⚠️ Consultores sem Apontamento na Semana</div>',
+        st.markdown('<div class="section-title">⚠️ Apontamento de Horas — Semana</div>',
                     unsafe_allow_html=True)
 
+        # Build sets
         _apontaram_emails = set(
             str(r["Email"]).strip().lower()
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
+        _total_rec = 0
+        _apontaram_list  = []
+        _nao_apontaram   = []
+        for _, _rr in df_rec.iterrows():
+            _cn = str(_rr.get("Consultor","")).strip()
+            _ce = str(_rr.get("Email","")).strip().lower()
+            if not _cn or _cn.lower() in ("nan","nat","") : continue
+            if not _ce or _ce in ("nan","nat","")         : continue
+            _total_rec += 1
+            if _ce in _apontaram_emails:
+                _horas_c = dfa[dfa["Email"].str.lower() == _ce]["Horas"].sum()
+                _apontaram_list.append((_cn, round(_horas_c, 1)))
+            else:
+                _nao_apontaram.append(_cn)
+        _apontaram_list = sorted(_apontaram_list, key=lambda x: x[0])
+        _nao_apontaram  = sorted(_nao_apontaram)
 
-        _nao_apontaram = sorted([
-            (str(_rr.get("Consultor","")).strip(), str(_rr.get("Email","")).strip().lower())
-            for _, _rr in df_rec.iterrows()
-            if str(_rr.get("Consultor","")).strip()
-            and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
-            and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
-            and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-        ], key=lambda x: x[0])
+        # Cards
+        st.markdown(f"""
+        <div class="kpi-grid">
+            {kpi_html(_total_rec,            "👥 Total de consultores",   "")}
+            {kpi_html(len(_apontaram_list),  "✅ Apontaram",              "green")}
+            {kpi_html(len(_nao_apontaram),   "⚠️ Não apontaram",         "rose")}
+        </div>
+        """, unsafe_allow_html=True)
 
-        if not _nao_apontaram:
-            st.success("✅ Todos os consultores apontaram atividades esta semana!")
-        else:
-            _na_cols = st.columns([1, 3])
-            with _na_cols[0]:
-                st.markdown(
-                    f"<div style='background:#fff7ed;border:1px solid #f97316;border-radius:8px;"
-                    f"padding:.8rem 1rem;text-align:center;'>"
-                    f"<span style='font-size:1.8rem;font-weight:700;color:#f97316;'>{len(_nao_apontaram)}</span>"
-                    f"<br><span style='font-size:.72rem;color:#9a3412;font-weight:600;'>SEM APONTAMENTO</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
+        # Tables side by side
+        _col_ap, _col_na = st.columns(2)
+
+        with _col_ap:
+            st.markdown("<div style='font-weight:600;font-size:.85rem;color:#166534;margin-bottom:.4rem;'>✅ Apontaram</div>", unsafe_allow_html=True)
+            _rows_ap = "".join(
+                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;'>{nome}</td>"
+                f"<td style='padding:5px 10px;font-size:.8rem;color:#475569;text-align:right;'>{h}h</td>"
+                f"</tr>"
+                for nome, h in _apontaram_list
+            )
+            st.markdown(f"""
+            <div style='overflow-x:auto;'>
+            <table style='width:100%;border-collapse:collapse;'>
+              <thead><tr style='background:#f0fdf4;'>
+                <th style='padding:6px 10px;font-size:.75rem;color:#166534;font-weight:600;text-align:left;'>Consultor</th>
+                <th style='padding:6px 10px;font-size:.75rem;color:#166534;font-weight:600;text-align:right;'>Horas</th>
+              </tr></thead>
+              <tbody>{_rows_ap}</tbody>
+            </table></div>
+            """, unsafe_allow_html=True)
+
+        with _col_na:
+            st.markdown("<div style='font-weight:600;font-size:.85rem;color:#9a3412;margin-bottom:.4rem;'>⚠️ Não apontaram</div>", unsafe_allow_html=True)
+            if not _nao_apontaram:
+                st.success("Todos apontaram!")
+            else:
+                _rows_na = "".join(
+                    f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                    f"<td style='padding:5px 10px;font-size:.8rem;color:#1e293b;'>{nome}</td>"
+                    f"</tr>"
+                    for nome in _nao_apontaram
                 )
-            with _na_cols[1]:
-                _badges = "".join(
-                    f"<span style='display:inline-block;background:#f1f5f9;color:#1e293b;"
-                    f"border-radius:4px;padding:3px 10px;font-size:.78rem;margin:2px 3px;"
-                    f"white-space:nowrap;'>{nome}</span>"
-                    for nome, _ in _nao_apontaram
-                )
-                st.markdown(f"<div style='line-height:2;'>{_badges}</div>", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div style='overflow-x:auto;'>
+                <table style='width:100%;border-collapse:collapse;'>
+                  <thead><tr style='background:#fff7ed;'>
+                    <th style='padding:6px 10px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
+                  </tr></thead>
+                  <tbody>{_rows_na}</tbody>
+                </table></div>
+                """, unsafe_allow_html=True)
 
         st.markdown("---")
 

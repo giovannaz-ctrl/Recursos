@@ -373,39 +373,55 @@ def load_data(file_bytes: bytes):
     df2 = pd.DataFrame(ws_rows)
 
     # ── Sheet 3: Atividades da Semana ─────────────────────────────
+    # Nova estrutura: email embutido em 'Recurso' como 'Nome <email>;'
+    # Colunas: Recurso, Projeto, Fase do Projeto, Atividade, Data, Hora inicio, Hora fim
     s3_key = next((k for k in sheets if "atividade" in k or "3-" in k), None)
     df_at_raw = pd.read_excel(BytesIO(file_bytes), sheet_name=sheets[s3_key] if s3_key else 2)
     df_at_raw.columns = [c.strip() for c in df_at_raw.columns]
 
-    # Email column in sheet 3 (usually 'Unnamed: 1')
-    email_col_3 = next((c for c in df_at_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
+    def _time_to_float(t):
+        """datetime.time or excel fraction → decimal hours."""
+        if t is None or (isinstance(t, float) and np.isnan(t)):
+            return None
+        import datetime as _dt
+        if isinstance(t, _dt.time):
+            return t.hour + t.minute / 60
+        try:
+            return float(t) * 24
+        except Exception:
+            return None
 
     at_rows = []
     for _, row in df_at_raw.iterrows():
-        recurso   = str(row.get("Recurso", "")).strip()
-        raw_rec   = str(row.get(email_col_3, "")) if email_col_3 else recurso
+        # Recurso now contains 'Nome <email>;' directly
+        recurso   = str(row.get("Recurso", "")).strip().rstrip(";").strip()
         projeto   = str(row.get("Projeto", "")).strip()
-        fase      = str(row.get("Fase do Projeto", "")).strip()
+        fase      = str(row.get("Fase do Projeto", row.get("Fase", "")) or "").strip()
         atividade = str(row.get("Atividade", "")).strip()
         data_raw  = row.get("Data")
         hi_raw    = row.get("Hora inicio") or row.get("Hora Inicio") or row.get("Hora Início")
         hf_raw    = row.get("Hora fim") or row.get("Hora Fim")
 
-        # Extract proper name and email from 'Nome <email>' format
-        email3 = extract_email(raw_rec) if raw_rec and "<" in raw_rec else ""
-        name3  = extract_name(raw_rec)  if raw_rec and "<" in raw_rec else recurso.title()
+        if not recurso or recurso.lower() in ("nan", "nat", "none", ""): continue
+        if not projeto or projeto.lower() in ("nan", "nat", "none", ""): continue
 
-        if not recurso or recurso == "nan":
-            continue
+        # Extract name and email — both old format ('Nome <email>') and new ('Nome <email>;')
+        if "<" in recurso:
+            email3 = extract_email(recurso)
+            name3  = extract_name(recurso)
+        else:
+            email3 = ""
+            name3  = recurso.title()
 
-        # Data: may be datetime64 or serial
+        if not name3 or name3.lower() in ("nan", "nat", "none"): continue
+
+        # Data parsing
         if pd.notna(data_raw):
             try:
                 if isinstance(data_raw, (pd.Timestamp, datetime)):
                     data = pd.Timestamp(data_raw)
                 else:
                     data = pd.Timestamp(excel_serial_to_date(data_raw))
-                # Reject obviously invalid dates
                 if data and data.year < 2000:
                     data = None
             except Exception:
@@ -413,23 +429,11 @@ def load_data(file_bytes: bytes):
         else:
             data = None
 
-        def _time_to_float(t):
-            """datetime.time or excel fraction → decimal hours."""
-            if t is None or (isinstance(t, float) and np.isnan(t)):
-                return None
-            import datetime as _dt
-            if isinstance(t, _dt.time):
-                return t.hour + t.minute / 60
-            try:
-                return float(t) * 24
-            except Exception:
-                return None
-
-        h_ini   = _time_to_float(hi_raw)
-        h_fim   = _time_to_float(hf_raw)
-        horas   = round(h_fim - h_ini, 2) if (h_ini is not None and h_fim is not None) else 0.0
-        client  = get_client_from_project(projeto)
-        semana  = f"W{data.isocalendar()[1]:02d}/{data.year}" if pd.notna(data) and data else ""
+        h_ini  = _time_to_float(hi_raw)
+        h_fim  = _time_to_float(hf_raw)
+        horas  = round(h_fim - h_ini, 2) if (h_ini is not None and h_fim is not None) else 0.0
+        client = get_client_from_project(projeto)
+        semana = f"W{data.isocalendar()[1]:02d}/{data.year}" if pd.notna(data) and data else ""
 
         at_rows.append({
             "Consultor": name3, "Email": email3, "Projeto": projeto, "Cliente": client,

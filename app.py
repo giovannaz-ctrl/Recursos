@@ -400,10 +400,16 @@ def load_data(file_bytes: bytes):
 
         # Data: may be datetime64 or serial
         if pd.notna(data_raw):
-            if isinstance(data_raw, (pd.Timestamp, datetime)):
-                data = pd.Timestamp(data_raw)
-            else:
-                data = pd.Timestamp(excel_serial_to_date(data_raw))
+            try:
+                if isinstance(data_raw, (pd.Timestamp, datetime)):
+                    data = pd.Timestamp(data_raw)
+                else:
+                    data = pd.Timestamp(excel_serial_to_date(data_raw))
+                # Reject obviously invalid dates
+                if data and data.year < 2000:
+                    data = None
+            except Exception:
+                data = None
         else:
             data = None
 
@@ -1111,7 +1117,7 @@ with tab4:
     if df3.empty:
         st.warning("Nenhuma atividade encontrada na aba '3-Atividades da Semana'.")
     else:
-        dfa_all = df3[df3["Data"].notna()].copy()
+        dfa_all = df3[df3["Data"].notna() & (df3["Data"] > pd.Timestamp("2000-01-01"))].copy()
 
         # ── All consultants: activities + workshop-only ───────────
         # Build name→email from df2 for workshop consultants

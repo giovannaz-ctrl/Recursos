@@ -1249,21 +1249,49 @@ with tab4:
         if _nao_apontaram:
             st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
                         unsafe_allow_html=True)
+
+            _na_page_size = 10
+            _na_total     = len(_nao_apontaram)
+            _na_n_pages   = max(1, -(-_na_total // _na_page_size))
+
+            if "na_page" not in st.session_state:
+                st.session_state["na_page"] = 0
+            if st.session_state["na_page"] >= _na_n_pages:
+                st.session_state["na_page"] = 0
+
+            _na_p1, _na_p2, _na_p3 = st.columns([1, 6, 1])
+            with _na_p1:
+                if st.button("◀", key="na_prev") and st.session_state["na_page"] > 0:
+                    st.session_state["na_page"] -= 1
+                    st.rerun()
+            with _na_p3:
+                if st.button("▶", key="na_next") and st.session_state["na_page"] < _na_n_pages - 1:
+                    st.session_state["na_page"] += 1
+                    st.rerun()
+            with _na_p2:
+                st.markdown(
+                    f"<div style='text-align:center;padding:.3rem 0;font-size:.82rem;color:#94a3b8;'>"
+                    f"Página {st.session_state['na_page']+1} de {_na_n_pages} · "
+                    f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
+                    unsafe_allow_html=True,
+                )
+
+            _na_start = st.session_state["na_page"] * _na_page_size
+            _na_page  = _nao_apontaram[_na_start:_na_start + _na_page_size]
+
             _rows_na = "".join(
                 f"<tr style='border-bottom:1px solid #f1f5f9;'>"
-                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{i+1}.</td>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{_na_start+i+1}.</td>"
                 f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
                 f"</tr>"
-                for i, nome in enumerate(_nao_apontaram)
+                for i, nome in enumerate(_na_page)
             )
             st.markdown(f"""
             <div style='max-width:480px;'>
             <table style='width:100%;border-collapse:collapse;'>
               <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
                 <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
-                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>
-                  Consultor <span style='font-weight:400;color:#c2410c;'>({len(_nao_apontaram)} de {len(_nao_apontaram)+len(_apontaram_emails)} consultores)</span>
-                </th>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
               </tr></thead>
               <tbody>{_rows_na}</tbody>
             </table></div>

@@ -1263,7 +1263,7 @@ with tab4:
                 "Obrigado!"
             )
             _na_mailto = (
-                "mailto:?bcc=" + urllib.parse.quote(",".join(_nao_apontaram_emails))
+                "mailto:?bcc=" + urllib.parse.quote(",".join(_nao_apontaram_emails), safe=",@")
                 + "&subject=" + urllib.parse.quote(_na_subject)
                 + "&body=" + urllib.parse.quote(_na_body)
             )
@@ -1281,6 +1281,13 @@ with tab4:
                     "font-size:1.05rem;float:right;'>✉️</a>",
                     unsafe_allow_html=True,
                 )
+            st.markdown(
+                "<div style='font-size:.75rem;color:#94a3b8;margin-top:-4px;'>"
+                "✉️ Ao abrir o rascunho, preencha o campo <b>Para</b> com o seu próprio "
+                "e-mail antes de enviar — sem um destinatário principal, o Outlook pode "
+                "não enviar corretamente e-mails que só têm CCO preenchido.</div>",
+                unsafe_allow_html=True,
+            )
 
             _na_page_size = 20
             _na_total     = len(_nao_apontaram)

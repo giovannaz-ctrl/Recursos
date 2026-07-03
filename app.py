@@ -865,70 +865,73 @@ with tab1:
     if _tf_proj != "— todos —":
         display = display[display["Projeto"] == _tf_proj]
 
-    _datas = st.session_state["datas_entrada"]
+    if display.empty:
+        st.info("Nenhum registro encontrado para essa combinação de consultor e projeto.")
+    else:
+        _datas = st.session_state["datas_entrada"]
 
-    # Enrich display with Entrada / Saída columns
-    def _get_data(row, field):
-        _rec = _datas.get(_entry_key(row.get("Consultor Principal",""), row.get("Projeto","")), {})
-        if isinstance(_rec, dict):
-            return _rec.get(field, "") or ""
-        return _rec if field == "entrada" else ""
+        # Enrich display with Entrada / Saída columns
+        def _get_data(row, field):
+            _rec = _datas.get(_entry_key(row.get("Consultor Principal",""), row.get("Projeto","")), {})
+            if isinstance(_rec, dict):
+                return _rec.get(field, "") or ""
+            return _rec if field == "entrada" else ""
 
-    display["📅 Entrada"] = display.apply(lambda r: _get_data(r, "entrada"), axis=1)
-    display["🏁 Saída"]   = display.apply(lambda r: _get_data(r, "saida"),   axis=1)
+        display["📅 Entrada"] = display.apply(lambda r: _get_data(r, "entrada"), axis=1)
+        display["🏁 Saída"]   = display.apply(lambda r: _get_data(r, "saida"),   axis=1)
 
-    # Convert date strings to date objects for the editor
-    def _to_date(s):
-        try: return datetime.strptime(s, "%Y-%m-%d").date() if s else None
-        except: return None
+        # Convert date strings to date objects for the editor
+        def _to_date(s):
+            try: return datetime.strptime(s, "%Y-%m-%d").date() if s else None
+            except: return None
 
-    display["📅 Entrada"] = display["📅 Entrada"].apply(_to_date)
-    display["🏁 Saída"]   = display["🏁 Saída"].apply(_to_date)
+        display["📅 Entrada"] = display["📅 Entrada"].apply(_to_date)
+        display["🏁 Saída"]   = display["🏁 Saída"].apply(_to_date)
 
-    _edited = st.data_editor(
-        display,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cliente":              st.column_config.TextColumn("Cliente",             width="small",  disabled=True),
-            "Projeto":              st.column_config.TextColumn("Projeto",             width="large",  disabled=True),
-            "Fase":                 st.column_config.TextColumn("Fase",                width="small",  disabled=True),
-            "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
-            "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
-            "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
-            "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
-            "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
-        },
-        key="tabela_detalhada_editor",
-    )
+        _edited = st.data_editor(
+            display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cliente":              st.column_config.TextColumn("Cliente",             width="small",  disabled=True),
+                "Projeto":              st.column_config.TextColumn("Projeto",             width="large",  disabled=True),
+                "Fase":                 st.column_config.TextColumn("Fase",                width="small",  disabled=True),
+                "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
+                "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
+                "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
+                "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
+                "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
+            },
+            key="tabela_detalhada_editor",
+        )
 
-    # Detect changes and save
-    if st.button("💾 Salvar datas", key="dt_save_table"):
-        _changed = False
-        for _, _row in _edited.iterrows():
-            _cons = _row.get("Consultor Principal", "")
-            _proj = _row.get("Projeto", "")
-            if not _cons or not _proj: continue
-            _key  = _entry_key(_cons, _proj)
-            _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
-            _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
-            _cur  = _datas.get(_key, {})
-            _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
-            _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
-            if _e != _cur_e or _s != _cur_s:
-                _datas[_key] = {"entrada": _e, "saida": _s}
-                _changed = True
-        if _changed:
-            st.session_state["datas_entrada"] = _datas
-            _save_datas(_datas)
-            st.success("Datas salvas!")
-            st.rerun()
-        else:
-            st.info("Nenhuma alteração detectada.")
+        # Detect changes and save
+        if st.button("💾 Salvar datas", key="dt_save_table"):
+            _changed = False
+            for _, _row in _edited.iterrows():
+                _cons = _row.get("Consultor Principal", "")
+                _proj = _row.get("Projeto", "")
+                if not _cons or not _proj: continue
+                _key  = _entry_key(_cons, _proj)
+                _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
+                _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
+                _cur  = _datas.get(_key, {})
+                _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
+                _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
+                if _e != _cur_e or _s != _cur_s:
+                    _datas[_key] = {"entrada": _e, "saida": _s}
+                    _changed = True
+            if _changed:
+                st.session_state["datas_entrada"] = _datas
+                _save_datas(_datas)
+                st.success("Datas salvas!")
+                st.rerun()
+            else:
+                st.info("Nenhuma alteração detectada.")
 
-    st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
-                       file_name="alocacao_consultores.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
+                           file_name="alocacao_consultores.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     # ── Alocações Pendentes — matriz estilo recursos ─────────────
     if not df_vagas.empty:

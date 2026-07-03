@@ -1268,24 +1268,18 @@ with tab4:
                 + "&body=" + urllib.parse.quote(_na_body)
             )
 
-            _na_t1, _na_t2 = st.columns([8, 1])
-            with _na_t1:
-                st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
-                            unsafe_allow_html=True)
-            with _na_t2:
-                st.markdown(
-                    f"<a href='{_na_mailto}' target='_blank' title='Enviar lembrete por e-mail (Outlook) para os pendentes, em cópia oculta' "
-                    "style='display:flex;align-items:center;justify-content:center;"
-                    "height:34px;width:34px;margin-top:4px;border-radius:8px;"
-                    "background:#fff7ed;border:1px solid #fed7aa;text-decoration:none;"
-                    "font-size:1.05rem;float:right;'>✉️</a>",
-                    unsafe_allow_html=True,
-                )
             st.markdown(
-                "<div style='font-size:.75rem;color:#94a3b8;margin-top:-4px;'>"
-                "✉️ Ao abrir o rascunho, preencha o campo <b>Para</b> com o seu próprio "
-                "e-mail antes de enviar — sem um destinatário principal, o Outlook pode "
-                "não enviar corretamente e-mails que só têm CCO preenchido.</div>",
+                "<div style='display:flex;align-items:center;justify-content:space-between;"
+                "border-bottom:2px solid #ea580c;padding-bottom:6px;margin-bottom:.4rem;'>"
+                "<div class='section-title' style='border:none;padding:0;margin:0;'>"
+                "⚠️ Não apontaram esta semana</div>"
+                f"<a href='{_na_mailto}' target='_blank' "
+                "title='Enviar lembrete por e-mail (Outlook) para os pendentes, em cópia oculta' "
+                "style='display:flex;align-items:center;justify-content:center;"
+                "height:32px;width:32px;flex-shrink:0;border-radius:8px;"
+                "background:#fff7ed;border:1px solid #fed7aa;text-decoration:none;"
+                "font-size:1rem;'>✉️</a>"
+                "</div>",
                 unsafe_allow_html=True,
             )
 

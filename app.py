@@ -83,6 +83,65 @@ def _entry_key(consultor, projeto):
     return f"{consultor}|{projeto}"
 
 
+# ─────────────────────────────────────────────
+# AUSÊNCIAS PROGRAMADAS — persist in GitHub via API
+# Repo  : https://github.com/giovannaz-ctrl/Recursos
+# File  : Ausencias_Programadas.json
+# Secret: GITHUB_PAT  (set in Streamlit Cloud → Settings → Secrets)
+# ─────────────────────────────────────────────
+_GH_FILE_AUS = "Ausencias_Programadas.json"
+_GH_API_AUS  = f"https://api.github.com/repos/{_GH_REPO}/contents/{_GH_FILE_AUS}"
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_ausencias():
+    """Load absences list (JSON) from GitHub. Cached for 60s to avoid rate limits."""
+    try:
+        import urllib.request, base64
+        req = urllib.request.Request(_GH_API_AUS, headers=_gh_headers())
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+        parsed = json.loads(base64.b64decode(data["content"]).decode("utf-8"))
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+def _save_ausencias(lst):
+    """Write absences list back to GitHub (create or update)."""
+    try:
+        import urllib.request, base64
+        content_bytes = json.dumps(lst, ensure_ascii=False, indent=2).encode("utf-8")
+        content_b64   = base64.b64encode(content_bytes).decode()
+
+        sha = None
+        try:
+            req = urllib.request.Request(_GH_API_AUS, headers=_gh_headers())
+            with urllib.request.urlopen(req) as resp:
+                sha = json.loads(resp.read().decode()).get("sha")
+        except Exception:
+            pass  # file doesn't exist yet → create
+
+        payload = {
+            "message": "update Ausencias_Programadas.json",
+            "content": content_b64,
+            "branch":  _GH_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+
+        req = urllib.request.Request(
+            _GH_API_AUS,
+            data=json.dumps(payload).encode(),
+            headers={**_gh_headers(), "Content-Type": "application/json"},
+            method="PUT",
+        )
+        urllib.request.urlopen(req)
+        _load_ausencias.clear()   # invalidate cache after write
+        return True
+    except Exception as e:
+        st.warning(f"Não foi possível salvar no GitHub: {e}")
+        return False
+
+
 
 
 # ─────────────────────────────────────────────
@@ -2549,6 +2608,124 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                         f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>🔎 {_hrow['Perfil']}</div>"
                         f"</div>", unsafe_allow_html=True,
                     )
+
+        # ── Ausência Programada ───────────────────────────────────
+        st.markdown('<div class="section-title">🗓️ Ausência Programada</div>',
+                    unsafe_allow_html=True)
+        st.caption(
+            "Cadastre períodos de ausência programada (férias, licenças, afastamentos etc.) "
+            "dos consultores. Os dados ficam gravados no programa."
+        )
+
+        _ausencias = _load_ausencias()
+
+        with st.form("form_add_ausencia", clear_on_submit=True):
+            _fa1, _fa2, _fa3, _fa4 = st.columns([2, 1, 1, 1])
+            with _fa1:
+                _aus_consultor = st.selectbox(
+                    "Consultor", sorted(df_rec["Consultor"].dropna().unique()),
+                    key="aus_consultor_sel",
+                )
+            with _fa2:
+                _aus_inicio = st.date_input("Início", key="aus_inicio_input", format="DD/MM/YYYY")
+            with _fa3:
+                _aus_fim = st.date_input("Fim", key="aus_fim_input", format="DD/MM/YYYY")
+            with _fa4:
+                st.markdown("<div style='height:1.6rem;'></div>", unsafe_allow_html=True)
+                _aus_submit = st.form_submit_button("➕ Adicionar")
+
+        if _aus_submit:
+            if _aus_fim < _aus_inicio:
+                st.error("A data de fim não pode ser anterior à data de início.")
+            else:
+                _ausencias.append({
+                    "Consultor":   _aus_consultor,
+                    "Data Início": _aus_inicio.strftime("%Y-%m-%d"),
+                    "Data Fim":    _aus_fim.strftime("%Y-%m-%d"),
+                })
+                if _save_ausencias(_ausencias):
+                    st.success(f"Ausência de {_aus_consultor} cadastrada e salva.")
+                    st.rerun()
+
+        if _ausencias:
+            _df_aus_view = pd.DataFrame(_ausencias).copy()
+            for _dc in ("Data Início", "Data Fim"):
+                if _dc not in _df_aus_view.columns:
+                    _df_aus_view[_dc] = ""
+            _df_aus_view["_sort"] = pd.to_datetime(_df_aus_view["Data Início"], errors="coerce")
+            _df_aus_view = _df_aus_view.sort_values("_sort", na_position="last")
+            _df_aus_view["Data Início"] = pd.to_datetime(_df_aus_view["Data Início"], errors="coerce").dt.strftime("%d/%m/%Y")
+            _df_aus_view["Data Fim"]    = pd.to_datetime(_df_aus_view["Data Fim"], errors="coerce").dt.strftime("%d/%m/%Y")
+
+            st.markdown(f"**{len(_ausencias)} ausência(s) cadastrada(s):**")
+
+            _aus_rows_html = "".join(
+                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{r.get('Consultor','')}</td>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{r.get('Data Início','')}</td>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{r.get('Data Fim','')}</td>"
+                f"</tr>"
+                for _, r in _df_aus_view.iterrows()
+            )
+            st.markdown(
+                "<div style='overflow-x:auto;'>"
+                "<table style='width:100%;border-collapse:collapse;'>"
+                "<thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>"
+                "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>"
+                "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Data Início</th>"
+                "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Data Fim</th>"
+                f"</tr></thead><tbody>{_aus_rows_html}</tbody></table></div>",
+                unsafe_allow_html=True,
+            )
+
+            _aus_del_options = [
+                f"{a.get('Consultor','?')} — {a.get('Data Início','?')} a {a.get('Data Fim','?')}"
+                for a in _ausencias
+            ]
+            _ad1, _ad2 = st.columns([4, 1])
+            with _ad1:
+                _aus_to_delete = st.selectbox(
+                    "Remover ausência", ["—"] + _aus_del_options, key="aus_del_sel",
+                )
+            with _ad2:
+                st.markdown("<div style='height:1.6rem;'></div>", unsafe_allow_html=True)
+                if st.button("🗑️ Remover", key="aus_del_btn") and _aus_to_delete != "—":
+                    _del_idx = _aus_del_options.index(_aus_to_delete)
+                    _ausencias.pop(_del_idx)
+                    if _save_ausencias(_ausencias):
+                        st.success("Ausência removida.")
+                        st.rerun()
+        else:
+            st.info("Nenhuma ausência programada cadastrada ainda.")
+
+        with st.expander("📝 Editar lista em JSON"):
+            st.caption(
+                "Formato: lista de objetos com `Consultor`, `Data Início` e `Data Fim` "
+                "(datas no formato AAAA-MM-DD). Edite o JSON abaixo e clique em Salvar."
+            )
+            _aus_json_text = st.text_area(
+                "JSON das ausências",
+                value=json.dumps(_ausencias, ensure_ascii=False, indent=2),
+                height=220, key="aus_json_editor",
+            )
+            if st.button("💾 Salvar JSON", key="aus_json_save"):
+                try:
+                    _parsed = json.loads(_aus_json_text)
+                    if not isinstance(_parsed, list):
+                        raise ValueError("O JSON precisa ser uma lista de objetos.")
+                    for _item in _parsed:
+                        if not isinstance(_item, dict) or not all(
+                            k in _item for k in ("Consultor", "Data Início", "Data Fim")
+                        ):
+                            raise ValueError(
+                                "Cada item precisa ter as chaves Consultor, Data Início e Data Fim."
+                            )
+                    if _save_ausencias(_parsed):
+                        st.success("JSON salvo com sucesso.")
+                        st.rerun()
+                except Exception as _e:
+                    st.error(f"JSON inválido: {_e}")
+
                                     # ───────────────────────────────────────────────────────────────
 # TAB 5 – Go Lives
 # ───────────────────────────────────────────────────────────────

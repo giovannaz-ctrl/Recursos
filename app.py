@@ -107,8 +107,15 @@ def _load_ausencias():
 
 def _save_ausencias(lst):
     """Write absences list back to GitHub (create or update)."""
+    if not st.secrets.get("GITHUB_PAT", ""):
+        st.error(
+            "❌ Não foi possível salvar: o secret **GITHUB_PAT** não está configurado "
+            "neste app (Streamlit Cloud → Settings → Secrets). Sem ele, as ausências "
+            "não são gravadas e somem ao atualizar a página."
+        )
+        return False
     try:
-        import urllib.request, base64
+        import urllib.request, urllib.error, base64
         content_bytes = json.dumps(lst, ensure_ascii=False, indent=2).encode("utf-8")
         content_b64   = base64.b64encode(content_bytes).decode()
 
@@ -117,6 +124,12 @@ def _save_ausencias(lst):
             req = urllib.request.Request(_GH_API_AUS, headers=_gh_headers())
             with urllib.request.urlopen(req) as resp:
                 sha = json.loads(resp.read().decode()).get("sha")
+        except urllib.error.HTTPError as _e_get:
+            if _e_get.code != 404:
+                # 404 = arquivo ainda não existe (ok, será criado). Outro código = problema real.
+                _body = _e_get.read().decode(errors="ignore")
+                st.error(f"❌ Erro ao consultar o arquivo no GitHub (HTTP {_e_get.code}): {_body}")
+                return False
         except Exception:
             pass  # file doesn't exist yet → create
 
@@ -137,8 +150,12 @@ def _save_ausencias(lst):
         urllib.request.urlopen(req)
         _load_ausencias.clear()   # invalidate cache after write
         return True
+    except urllib.error.HTTPError as e:
+        _body = e.read().decode(errors="ignore")
+        st.error(f"❌ Erro ao salvar no GitHub (HTTP {e.code}): {_body}")
+        return False
     except Exception as e:
-        st.warning(f"Não foi possível salvar no GitHub: {e}")
+        st.error(f"❌ Não foi possível salvar no GitHub: {e}")
         return False
 
 
@@ -2638,12 +2655,12 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
             if _aus_fim < _aus_inicio:
                 st.error("A data de fim não pode ser anterior à data de início.")
             else:
-                _ausencias.append({
+                _candidate = _ausencias + [{
                     "Consultor":   _aus_consultor,
                     "Data Início": _aus_inicio.strftime("%Y-%m-%d"),
                     "Data Fim":    _aus_fim.strftime("%Y-%m-%d"),
-                })
-                if _save_ausencias(_ausencias):
+                }]
+                if _save_ausencias(_candidate):
                     st.success(f"Ausência de {_aus_consultor} cadastrada e salva.")
                     st.rerun()
 
@@ -2691,8 +2708,8 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                 st.markdown("<div style='height:1.6rem;'></div>", unsafe_allow_html=True)
                 if st.button("🗑️ Remover", key="aus_del_btn") and _aus_to_delete != "—":
                     _del_idx = _aus_del_options.index(_aus_to_delete)
-                    _ausencias.pop(_del_idx)
-                    if _save_ausencias(_ausencias):
+                    _candidate_del = _ausencias[:_del_idx] + _ausencias[_del_idx+1:]
+                    if _save_ausencias(_candidate_del):
                         st.success("Ausência removida.")
                         st.rerun()
         else:

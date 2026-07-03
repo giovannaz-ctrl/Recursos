@@ -1289,7 +1289,7 @@ with tab4:
                 unsafe_allow_html=True,
             )
 
-            _na_page_size = 20
+            _na_page_size = 10
             _na_total     = len(_nao_apontaram)
             _na_n_pages   = max(1, -(-_na_total // _na_page_size))
 
@@ -1318,41 +1318,23 @@ with tab4:
             _na_start = st.session_state["na_page"] * _na_page_size
             _na_page  = _nao_apontaram[_na_start:_na_start + _na_page_size]
 
-            # Distribui os nomes em colunas para ocupar toda a largura da página
-            _na_n_cols = 4
-            _na_rows_per_col = -(-len(_na_page) // _na_n_cols) or 1
-            _na_cols_data = [
-                _na_page[i:i + _na_rows_per_col]
-                for i in range(0, len(_na_page), _na_rows_per_col)
-            ]
-
-            def _na_build_table(_col_names, _offset):
-                _rows = "".join(
-                    f"<tr style='border-bottom:1px solid #f1f5f9;'>"
-                    f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{_offset+i+1}.</td>"
-                    f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
-                    f"</tr>"
-                    for i, nome in enumerate(_col_names)
-                )
-                return (
-                    "<table style='width:100%;border-collapse:collapse;'>"
-                    "<thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>"
-                    "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>"
-                    "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>"
-                    f"</tr></thead><tbody>{_rows}</tbody></table>"
-                )
-
-            _na_tables_html = "".join(
-                f"<div>{_na_build_table(_col, _na_start + idx * _na_rows_per_col)}</div>"
-                for idx, _col in enumerate(_na_cols_data)
+            _rows_na = "".join(
+                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{_na_start+i+1}.</td>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
+                f"</tr>"
+                for i, nome in enumerate(_na_page)
             )
-
-            st.markdown(
-                f"<div style='width:100%;display:grid;"
-                f"grid-template-columns:repeat({max(1, len(_na_cols_data))}, 1fr);"
-                f"gap:0 24px;'>{_na_tables_html}</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"""
+            <div style='width:100%;'>
+            <table style='width:100%;border-collapse:collapse;'>
+              <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
+              </tr></thead>
+              <tbody>{_rows_na}</tbody>
+            </table></div>
+            """, unsafe_allow_html=True)
         else:
             st.success("✅ Todos os consultores apontaram atividades esta semana!")
 

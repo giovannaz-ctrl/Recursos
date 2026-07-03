@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import re
 from io import BytesIO
 import json, os
+import urllib.parse
 
 # ─────────────────────────────────────────────
 # ENTRY DATES — persist in GitHub via API
@@ -1237,18 +1238,49 @@ with tab4:
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
-        _nao_apontaram = sorted([
-            str(_rr.get("Consultor","")).strip()
+        _nao_apontaram_recs = sorted([
+            {
+                "Consultor": str(_rr.get("Consultor","")).strip(),
+                "Email":     str(_rr.get("Email","")).strip().lower(),
+            }
             for _, _rr in df_rec.iterrows()
             if str(_rr.get("Consultor","")).strip()
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-        ])
+        ], key=lambda _r: _r["Consultor"])
+        _nao_apontaram = [_r["Consultor"] for _r in _nao_apontaram_recs]
+        _nao_apontaram_emails = [_r["Email"] for _r in _nao_apontaram_recs if _r["Email"]]
 
         if _nao_apontaram:
-            st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
-                        unsafe_allow_html=True)
+            _na_subject = "Lembrete: Apontamento do Planejamento Semanal pendente"
+            _na_body = (
+                "Ola,\n\n"
+                "Identificamos que o apontamento das atividades da semana "
+                f"({week_labels3[sel_idx3]}) ainda nao foi enviado.\n\n"
+                "Pedimos, por gentileza, que envie o planejamento da semana "
+                "o quanto antes.\n\n"
+                "Obrigado!"
+            )
+            _na_mailto = (
+                "mailto:?bcc=" + urllib.parse.quote(",".join(_nao_apontaram_emails))
+                + "&subject=" + urllib.parse.quote(_na_subject)
+                + "&body=" + urllib.parse.quote(_na_body)
+            )
+
+            _na_t1, _na_t2 = st.columns([8, 1])
+            with _na_t1:
+                st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
+                            unsafe_allow_html=True)
+            with _na_t2:
+                st.markdown(
+                    f"<a href='{_na_mailto}' target='_blank' title='Enviar lembrete por e-mail (Outlook) para os pendentes, em cópia oculta' "
+                    "style='display:flex;align-items:center;justify-content:center;"
+                    "height:34px;width:34px;margin-top:4px;border-radius:8px;"
+                    "background:#fff7ed;border:1px solid #fed7aa;text-decoration:none;"
+                    "font-size:1.05rem;float:right;'>✉️</a>",
+                    unsafe_allow_html=True,
+                )
 
             _na_page_size = 20
             _na_total     = len(_nao_apontaram)

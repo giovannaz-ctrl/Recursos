@@ -2698,34 +2698,6 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
         else:
             st.info("Nenhuma ausência programada cadastrada ainda.")
 
-        with st.expander("📝 Editar lista em JSON"):
-            st.caption(
-                "Formato: lista de objetos com `Consultor`, `Data Início` e `Data Fim` "
-                "(datas no formato AAAA-MM-DD). Edite o JSON abaixo e clique em Salvar."
-            )
-            _aus_json_text = st.text_area(
-                "JSON das ausências",
-                value=json.dumps(_ausencias, ensure_ascii=False, indent=2),
-                height=220, key="aus_json_editor",
-            )
-            if st.button("💾 Salvar JSON", key="aus_json_save"):
-                try:
-                    _parsed = json.loads(_aus_json_text)
-                    if not isinstance(_parsed, list):
-                        raise ValueError("O JSON precisa ser uma lista de objetos.")
-                    for _item in _parsed:
-                        if not isinstance(_item, dict) or not all(
-                            k in _item for k in ("Consultor", "Data Início", "Data Fim")
-                        ):
-                            raise ValueError(
-                                "Cada item precisa ter as chaves Consultor, Data Início e Data Fim."
-                            )
-                    if _save_ausencias(_parsed):
-                        st.success("JSON salvo com sucesso.")
-                        st.rerun()
-                except Exception as _e:
-                    st.error(f"JSON inválido: {_e}")
-
                                     # ───────────────────────────────────────────────────────────────
 # TAB 5 – Go Lives
 # ───────────────────────────────────────────────────────────────

@@ -859,7 +859,6 @@ with tab1:
             )
 
     # ── Table ────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
 
     # Build display: pivot Principal + Sombra into same row
     if "Papel" in dft.columns and "Papel" in df1.columns:

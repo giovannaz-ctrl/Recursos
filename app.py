@@ -827,37 +827,6 @@ with tab1:
         )
 
 
-        # Detail on click via selectbox
-        # Detail selectors
-        _d1, _d2 = st.columns(2)
-        sel_cons = _d1.selectbox("Selecione um consultor para detalhar:",
-                                ["\u2014 todos \u2014"] + sorted(dft["Consultor"].dropna().unique().tolist()),
-                                key="t1_sel")
-        sel_proj = _d2.selectbox("Selecione um projeto para detalhar:",
-                                ["\u2014 todos \u2014"] + sorted(dft["Projeto"].dropna().drop_duplicates().tolist()),
-                                key="t1_sel_proj")
-        if sel_cons != "\u2014 todos \u2014" or sel_proj != "\u2014 todos \u2014":
-            detail = dft.copy()
-            if sel_cons != "\u2014 todos \u2014":
-                detail = detail[detail["Consultor"] == sel_cons]
-            if sel_proj != "\u2014 todos \u2014":
-                detail = detail[detail["Projeto"] == sel_proj]
-            n_p = detail["Projeto"].nunique()
-            n_m = detail["M\xf3dulo"].nunique()
-            label = sel_cons if sel_cons != "\u2014 todos \u2014" else sel_proj
-            st.markdown(
-                f"<div style='font-size:.85rem; color:#64748b; margin-bottom:.5rem;'>"
-                f"<b style='color:#1e293b;'>{label}</b>"
-                f" &nbsp;\xb7&nbsp; {n_p} projeto{'s' if n_p>1 else ''}"
-                f" &nbsp;\xb7&nbsp; {n_m} m\xf3dulo{'s' if n_m>1 else ''}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            st.dataframe(
-                detail[["Consultor","Projeto","Cliente","M\xf3dulo"]].drop_duplicates(),
-                use_container_width=True, hide_index=True,
-            )
-
     # ── Table ────────────────────────────────────────────────────
 
     # Build display: pivot Principal + Sombra into same row
@@ -879,6 +848,22 @@ with tab1:
     # ── Tabela Detalhada + Datas editáveis ───────────────────────
     st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
     st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
+
+    _tf1, _tf2 = st.columns(2)
+    _tf_cons = _tf1.selectbox(
+        "Selecione um consultor para filtrar:",
+        ["— todos —"] + sorted(display["Consultor Principal"].dropna().unique().tolist()),
+        key="td_sel_cons",
+    )
+    _tf_proj = _tf2.selectbox(
+        "Selecione um projeto para filtrar:",
+        ["— todos —"] + sorted(display["Projeto"].dropna().unique().tolist()),
+        key="td_sel_proj",
+    )
+    if _tf_cons != "— todos —":
+        display = display[display["Consultor Principal"] == _tf_cons]
+    if _tf_proj != "— todos —":
+        display = display[display["Projeto"] == _tf_proj]
 
     _datas = st.session_state["datas_entrada"]
 

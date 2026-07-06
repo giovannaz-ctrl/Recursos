@@ -45,14 +45,19 @@ def _load_datas():
 
 def _fetch_remote_state():
     """Return (data_dict, sha) currently stored on GitHub. ({}, None) if file doesn't exist."""
-    import urllib.request, base64
+    import urllib.request, urllib.error, base64
     try:
         req = urllib.request.Request(_GH_API, headers=_gh_headers())
         with urllib.request.urlopen(req) as resp:
             raw = json.loads(resp.read().decode())
         data = json.loads(base64.b64decode(raw["content"]).decode("utf-8"))
+        st.session_state["_gh_debug_fetch"] = {"ok": True, "n_keys": len(data), "sha": raw.get("sha")}
         return data, raw.get("sha")
-    except Exception:
+    except urllib.error.HTTPError as e:
+        st.session_state["_gh_debug_fetch"] = {"ok": False, "status": e.code, "body": e.read().decode(errors="replace")[:500]}
+        return {}, None
+    except Exception as e:
+        st.session_state["_gh_debug_fetch"] = {"ok": False, "error": str(e)}
         return {}, None
 
 def _save_datas(updates, max_retries=3):
@@ -61,12 +66,16 @@ def _save_datas(updates, max_retries=3):
     write it back to GitHub. Retries automatically on 409 Conflict by
     re-fetching the current SHA + content and re-applying the merge.
     """
-    import urllib.request, base64
+    import urllib.request, urllib.error, base64
+
+    _debug = {"pat_set": bool(st.secrets.get("GITHUB_PAT", "")), "attempts": []}
 
     last_err = None
     for _attempt in range(max_retries):
+        _step = {"attempt": _attempt + 1}
         try:
             remote_data, sha = _fetch_remote_state()
+            _step["sha_found"] = sha
 
             # Merge: local updates win only for the keys they touch,
             # everything else from GitHub is preserved (avoids clobbering
@@ -90,19 +99,32 @@ def _save_datas(updates, max_retries=3):
                 headers={**_gh_headers(), "Content-Type": "application/json"},
                 method="PUT",
             )
-            urllib.request.urlopen(req)
+            with urllib.request.urlopen(req) as resp:
+                _step["status"] = resp.status
+                _resp_body = json.loads(resp.read().decode())
+                _step["new_sha"] = _resp_body.get("content", {}).get("sha")
+            _debug["attempts"].append(_step)
+            _debug["result"] = "success"
+            st.session_state["_gh_debug"] = _debug
             _load_datas.clear()   # invalidate cache after write
             return True
         except urllib.error.HTTPError as e:
+            _body = e.read().decode(errors="replace")[:500]
+            _step["status"] = e.code
+            _step["body"] = _body
+            _debug["attempts"].append(_step)
             last_err = e
             if e.code == 409:
-                # SHA is stale — loop again to re-fetch and retry
                 continue
             break
         except Exception as e:
+            _step["error"] = str(e)
+            _debug["attempts"].append(_step)
             last_err = e
             break
 
+    _debug["result"] = "failed"
+    st.session_state["_gh_debug"] = _debug
     st.warning(f"Não foi possível salvar no GitHub: {last_err}")
     return False
 
@@ -895,6 +917,17 @@ with tab1:
             st.rerun()
         # if it failed, the warning from _save_datas is already shown;
         # local session_state keeps the edit so the user doesn't lose it
+
+    with st.expander("🔧 Diagnóstico de salvamento (GitHub)"):
+        st.write("PAT configurado:", bool(st.secrets.get("GITHUB_PAT", "")))
+        st.write("Repositório:", _GH_REPO, "| Arquivo:", _GH_FILE, "| Branch:", _GH_BRANCH)
+        if "_gh_debug" in st.session_state:
+            st.json(st.session_state["_gh_debug"])
+        else:
+            st.caption("Ainda não houve tentativa de salvar nesta sessão.")
+        if "_gh_debug_fetch" in st.session_state:
+            st.caption("Última leitura do GitHub:")
+            st.json(st.session_state["_gh_debug_fetch"])
 
     st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
                        file_name="alocacao_consultores.xlsx",

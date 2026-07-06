@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 import re
 from io import BytesIO
 import json, os
-import urllib.parse
 
 # ─────────────────────────────────────────────
 # ENTRY DATES — persist in GitHub via API
@@ -44,119 +43,71 @@ def _load_datas():
     except Exception:
         return {}
 
-def _save_datas(d):
-    """Write JSON back to GitHub (create or update)."""
+def _fetch_remote_state():
+    """Return (data_dict, sha) currently stored on GitHub. ({}, None) if file doesn't exist."""
+    import urllib.request, base64
     try:
-        import urllib.request, base64
-        content_bytes = json.dumps(d, ensure_ascii=False, indent=2).encode("utf-8")
-        content_b64   = base64.b64encode(content_bytes).decode()
+        req = urllib.request.Request(_GH_API, headers=_gh_headers())
+        with urllib.request.urlopen(req) as resp:
+            raw = json.loads(resp.read().decode())
+        data = json.loads(base64.b64decode(raw["content"]).decode("utf-8"))
+        return data, raw.get("sha")
+    except Exception:
+        return {}, None
 
-        # Get current SHA (needed for update)
-        sha = None
+def _save_datas(updates, max_retries=3):
+    """
+    Merge `updates` (dict of changed keys) into the latest remote JSON and
+    write it back to GitHub. Retries automatically on 409 Conflict by
+    re-fetching the current SHA + content and re-applying the merge.
+    """
+    import urllib.request, base64
+
+    last_err = None
+    for _attempt in range(max_retries):
         try:
-            req = urllib.request.Request(_GH_API, headers=_gh_headers())
-            with urllib.request.urlopen(req) as resp:
-                sha = json.loads(resp.read().decode()).get("sha")
-        except Exception:
-            pass  # file doesn't exist yet → create
+            remote_data, sha = _fetch_remote_state()
 
-        payload = {
-            "message": "update Data_entrada_saida.json",
-            "content": content_b64,
-            "branch":  _GH_BRANCH,
-        }
-        if sha:
-            payload["sha"] = sha
+            # Merge: local updates win only for the keys they touch,
+            # everything else from GitHub is preserved (avoids clobbering
+            # concurrent edits from other sessions).
+            merged = {**remote_data, **updates}
 
-        req = urllib.request.Request(
-            _GH_API,
-            data=json.dumps(payload).encode(),
-            headers={**_gh_headers(), "Content-Type": "application/json"},
-            method="PUT",
-        )
-        urllib.request.urlopen(req)
-        _load_datas.clear()   # invalidate cache after write
-    except Exception as e:
-        st.warning(f"Não foi possível salvar no GitHub: {e}")
+            content_bytes = json.dumps(merged, ensure_ascii=False, indent=2).encode("utf-8")
+            content_b64   = base64.b64encode(content_bytes).decode()
+
+            payload = {
+                "message": "update Data_entrada_saida.json",
+                "content": content_b64,
+                "branch":  _GH_BRANCH,
+            }
+            if sha:
+                payload["sha"] = sha
+
+            req = urllib.request.Request(
+                _GH_API,
+                data=json.dumps(payload).encode(),
+                headers={**_gh_headers(), "Content-Type": "application/json"},
+                method="PUT",
+            )
+            urllib.request.urlopen(req)
+            _load_datas.clear()   # invalidate cache after write
+            return True
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if e.code == 409:
+                # SHA is stale — loop again to re-fetch and retry
+                continue
+            break
+        except Exception as e:
+            last_err = e
+            break
+
+    st.warning(f"Não foi possível salvar no GitHub: {last_err}")
+    return False
 
 def _entry_key(consultor, projeto):
     return f"{consultor}|{projeto}"
-
-
-# ─────────────────────────────────────────────
-# AUSÊNCIAS PROGRAMADAS — persist in GitHub via API
-# Repo  : https://github.com/giovannaz-ctrl/Recursos
-# File  : Ausencias_Programadas.json
-# Secret: GITHUB_PAT  (set in Streamlit Cloud → Settings → Secrets)
-# ─────────────────────────────────────────────
-_GH_FILE_AUS = "Ausencias_Programadas.json"
-_GH_API_AUS  = f"https://api.github.com/repos/{_GH_REPO}/contents/{_GH_FILE_AUS}"
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _load_ausencias():
-    """Load absences list (JSON) from GitHub. Cached for 60s to avoid rate limits."""
-    try:
-        import urllib.request, base64
-        req = urllib.request.Request(_GH_API_AUS, headers=_gh_headers())
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read().decode())
-        parsed = json.loads(base64.b64decode(data["content"]).decode("utf-8"))
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
-
-def _save_ausencias(lst):
-    """Write absences list back to GitHub (create or update)."""
-    if not st.secrets.get("GITHUB_PAT", ""):
-        st.error(
-            "❌ Não foi possível salvar: o secret **GITHUB_PAT** não está configurado "
-            "neste app (Streamlit Cloud → Settings → Secrets). Sem ele, as ausências "
-            "não são gravadas e somem ao atualizar a página."
-        )
-        return False
-    try:
-        import urllib.request, urllib.error, base64
-        content_bytes = json.dumps(lst, ensure_ascii=False, indent=2).encode("utf-8")
-        content_b64   = base64.b64encode(content_bytes).decode()
-
-        sha = None
-        try:
-            req = urllib.request.Request(_GH_API_AUS, headers=_gh_headers())
-            with urllib.request.urlopen(req) as resp:
-                sha = json.loads(resp.read().decode()).get("sha")
-        except urllib.error.HTTPError as _e_get:
-            if _e_get.code != 404:
-                # 404 = arquivo ainda não existe (ok, será criado). Outro código = problema real.
-                _body = _e_get.read().decode(errors="ignore")
-                st.error(f"❌ Erro ao consultar o arquivo no GitHub (HTTP {_e_get.code}): {_body}")
-                return False
-        except Exception:
-            pass  # file doesn't exist yet → create
-
-        payload = {
-            "message": "update Ausencias_Programadas.json",
-            "content": content_b64,
-            "branch":  _GH_BRANCH,
-        }
-        if sha:
-            payload["sha"] = sha
-
-        req = urllib.request.Request(
-            _GH_API_AUS,
-            data=json.dumps(payload).encode(),
-            headers={**_gh_headers(), "Content-Type": "application/json"},
-            method="PUT",
-        )
-        urllib.request.urlopen(req)
-        _load_ausencias.clear()   # invalidate cache after write
-        return True
-    except urllib.error.HTTPError as e:
-        _body = e.read().decode(errors="ignore")
-        st.error(f"❌ Erro ao salvar no GitHub (HTTP {e.code}): {_body}")
-        return False
-    except Exception as e:
-        st.error(f"❌ Não foi possível salvar no GitHub: {e}")
-        return False
 
 
 
@@ -827,7 +778,39 @@ with tab1:
         )
 
 
+        # Detail on click via selectbox
+        # Detail selectors
+        _d1, _d2 = st.columns(2)
+        sel_cons = _d1.selectbox("Selecione um consultor para detalhar:",
+                                ["\u2014 todos \u2014"] + sorted(dft["Consultor"].dropna().unique().tolist()),
+                                key="t1_sel")
+        sel_proj = _d2.selectbox("Selecione um projeto para detalhar:",
+                                ["\u2014 todos \u2014"] + sorted(dft["Projeto"].dropna().drop_duplicates().tolist()),
+                                key="t1_sel_proj")
+        if sel_cons != "\u2014 todos \u2014" or sel_proj != "\u2014 todos \u2014":
+            detail = dft.copy()
+            if sel_cons != "\u2014 todos \u2014":
+                detail = detail[detail["Consultor"] == sel_cons]
+            if sel_proj != "\u2014 todos \u2014":
+                detail = detail[detail["Projeto"] == sel_proj]
+            n_p = detail["Projeto"].nunique()
+            n_m = detail["M\xf3dulo"].nunique()
+            label = sel_cons if sel_cons != "\u2014 todos \u2014" else sel_proj
+            st.markdown(
+                f"<div style='font-size:.85rem; color:#64748b; margin-bottom:.5rem;'>"
+                f"<b style='color:#1e293b;'>{label}</b>"
+                f" &nbsp;\xb7&nbsp; {n_p} projeto{'s' if n_p>1 else ''}"
+                f" &nbsp;\xb7&nbsp; {n_m} m\xf3dulo{'s' if n_m>1 else ''}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(
+                detail[["Consultor","Projeto","Cliente","M\xf3dulo"]].drop_duplicates(),
+                use_container_width=True, hide_index=True,
+            )
+
     # ── Table ────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
 
     # Build display: pivot Principal + Sombra into same row
     if "Papel" in dft.columns and "Papel" in df1.columns:
@@ -847,66 +830,49 @@ with tab1:
 
     # ── Tabela Detalhada + Datas editáveis ───────────────────────
     st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
-    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. A data é salva automaticamente.")
+    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
 
-    _tf1, _tf2 = st.columns(2)
-    _tf_cons = _tf1.selectbox(
-        "Selecione um consultor para filtrar:",
-        ["— todos —"] + sorted(display["Consultor Principal"].dropna().unique().tolist()),
-        key="td_sel_cons",
+    _datas = st.session_state["datas_entrada"]
+
+    # Enrich display with Entrada / Saída columns
+    def _get_data(row, field):
+        _rec = _datas.get(_entry_key(row.get("Consultor Principal",""), row.get("Projeto","")), {})
+        if isinstance(_rec, dict):
+            return _rec.get(field, "") or ""
+        return _rec if field == "entrada" else ""
+
+    display["📅 Entrada"] = display.apply(lambda r: _get_data(r, "entrada"), axis=1)
+    display["🏁 Saída"]   = display.apply(lambda r: _get_data(r, "saida"),   axis=1)
+
+    # Convert date strings to date objects for the editor
+    def _to_date(s):
+        try: return datetime.strptime(s, "%Y-%m-%d").date() if s else None
+        except: return None
+
+    display["📅 Entrada"] = display["📅 Entrada"].apply(_to_date)
+    display["🏁 Saída"]   = display["🏁 Saída"].apply(_to_date)
+
+    _edited = st.data_editor(
+        display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cliente":              st.column_config.TextColumn("Cliente",             width="small",  disabled=True),
+            "Projeto":              st.column_config.TextColumn("Projeto",             width="large",  disabled=True),
+            "Fase":                 st.column_config.TextColumn("Fase",                width="small",  disabled=True),
+            "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
+            "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
+            "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
+            "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
+            "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
+        },
+        key="tabela_detalhada_editor",
     )
-    _tf_proj = _tf2.selectbox(
-        "Selecione um projeto para filtrar:",
-        ["— todos —"] + sorted(display["Projeto"].dropna().unique().tolist()),
-        key="td_sel_proj",
-    )
-    if _tf_cons != "— todos —":
-        display = display[display["Consultor Principal"] == _tf_cons]
-    if _tf_proj != "— todos —":
-        display = display[display["Projeto"] == _tf_proj]
 
-    if display.empty:
-        st.info("Nenhum registro encontrado para essa combinação de consultor e projeto.")
-    else:
-        _datas = st.session_state["datas_entrada"]
-
-        # Enrich display with Entrada / Saída columns
-        def _get_data(row, field):
-            _rec = _datas.get(_entry_key(row.get("Consultor Principal",""), row.get("Projeto","")), {})
-            if isinstance(_rec, dict):
-                return _rec.get(field, "") or ""
-            return _rec if field == "entrada" else ""
-
-        display["📅 Entrada"] = display.apply(lambda r: _get_data(r, "entrada"), axis=1)
-        display["🏁 Saída"]   = display.apply(lambda r: _get_data(r, "saida"),   axis=1)
-
-        # Convert date strings to date objects for the editor
-        def _to_date(s):
-            try: return datetime.strptime(s, "%Y-%m-%d").date() if s else None
-            except: return None
-
-        display["📅 Entrada"] = display["📅 Entrada"].apply(_to_date)
-        display["🏁 Saída"]   = display["🏁 Saída"].apply(_to_date)
-
-        _edited = st.data_editor(
-            display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Cliente":              st.column_config.TextColumn("Cliente",             width="small",  disabled=True),
-                "Projeto":              st.column_config.TextColumn("Projeto",             width="large",  disabled=True),
-                "Fase":                 st.column_config.TextColumn("Fase",                width="small",  disabled=True),
-                "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
-                "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
-                "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
-                "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
-                "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
-            },
-            key="tabela_detalhada_editor",
-        )
-
-        # Detecta alterações e salva automaticamente (sem precisar clicar em botão)
+    # Detect changes and save
+    if st.button("💾 Salvar datas", key="dt_save_table"):
         _changed = False
+        _updates = {}   # only the keys touched in this edit → sent to GitHub via merge
         for _, _row in _edited.iterrows():
             _cons = _row.get("Consultor Principal", "")
             _proj = _row.get("Projeto", "")
@@ -918,17 +884,23 @@ with tab1:
             _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
             _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
             if _e != _cur_e or _s != _cur_s:
-                _datas[_key] = {"entrada": _e, "saida": _s}
+                _new_val = {"entrada": _e, "saida": _s}
+                _datas[_key] = _new_val
+                _updates[_key] = _new_val
                 _changed = True
         if _changed:
             st.session_state["datas_entrada"] = _datas
-            _save_datas(_datas)
-            st.toast("💾 Data salva automaticamente!")
-            st.rerun()
+            if _save_datas(_updates):
+                st.success("Datas salvas!")
+                st.rerun()
+            # if it failed, the warning from _save_datas is already shown;
+            # local session_state keeps the edit so the user doesn't lose it
+        else:
+            st.info("Nenhuma alteração detectada.")
 
-        st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
-                           file_name="alocacao_consultores.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
+                       file_name="alocacao_consultores.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     # ── Alocações Pendentes — matriz estilo recursos ─────────────
     if not df_vagas.empty:
@@ -1298,50 +1270,18 @@ with tab4:
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
-        _nao_apontaram_recs = sorted([
-            {
-                "Consultor": str(_rr.get("Consultor","")).strip(),
-                "Email":     str(_rr.get("Email","")).strip().lower(),
-            }
+        _nao_apontaram = sorted([
+            str(_rr.get("Consultor","")).strip()
             for _, _rr in df_rec.iterrows()
             if str(_rr.get("Consultor","")).strip()
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-        ], key=lambda _r: _r["Consultor"])
-        _nao_apontaram = [_r["Consultor"] for _r in _nao_apontaram_recs]
-        _nao_apontaram_emails = [_r["Email"] for _r in _nao_apontaram_recs if _r["Email"]]
+        ])
 
         if _nao_apontaram:
-            _na_subject = "Lembrete: Apontamento do Planejamento Semanal pendente"
-            _na_body = (
-                "Ola,\n\n"
-                "Identificamos que o apontamento das atividades da semana "
-                f"({week_labels3[sel_idx3]}) ainda nao foi enviado.\n\n"
-                "Pedimos, por gentileza, que envie o planejamento da semana "
-                "o quanto antes.\n\n"
-                "Obrigado!"
-            )
-            _na_mailto = (
-                "mailto:?bcc=" + urllib.parse.quote(",".join(_nao_apontaram_emails), safe=",@")
-                + "&subject=" + urllib.parse.quote(_na_subject)
-                + "&body=" + urllib.parse.quote(_na_body)
-            )
-
-            st.markdown(
-                "<div style='display:flex;align-items:center;justify-content:space-between;"
-                "border-bottom:2px solid #ea580c;padding-bottom:6px;margin-bottom:.4rem;'>"
-                "<div class='section-title' style='border:none;padding:0;margin:0;'>"
-                "⚠️ Não apontaram esta semana</div>"
-                f"<a href='{_na_mailto}' target='_blank' "
-                "title='Enviar lembrete por e-mail (Outlook) para os pendentes, em cópia oculta' "
-                "style='display:flex;align-items:center;justify-content:center;"
-                "height:32px;width:32px;flex-shrink:0;border-radius:8px;"
-                "background:#fff7ed;border:1px solid #fed7aa;text-decoration:none;"
-                "font-size:1rem;'>✉️</a>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
+                        unsafe_allow_html=True)
 
             _na_page_size = 10
             _na_total     = len(_nao_apontaram)
@@ -1380,7 +1320,7 @@ with tab4:
                 for i, nome in enumerate(_na_page)
             )
             st.markdown(f"""
-            <div style='width:100%;'>
+            <div style='max-width:480px;'>
             <table style='width:100%;border-collapse:collapse;'>
               <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
                 <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
@@ -2609,96 +2549,6 @@ Para vagas com múltiplos módulos (PP;QM;PM), a demanda é dividida igualmente 
                         f"<div style='font-weight:700; color:#f97316; font-size:.88rem;'>🔎 {_hrow['Perfil']}</div>"
                         f"</div>", unsafe_allow_html=True,
                     )
-
-        # ── Ausência Programada ───────────────────────────────────
-        st.markdown('<div class="section-title">🗓️ Ausência Programada</div>',
-                    unsafe_allow_html=True)
-        st.caption(
-            "Cadastre períodos de ausência programada (férias, licenças, afastamentos etc.) "
-            "dos consultores. Os dados ficam gravados no programa."
-        )
-
-        _ausencias = _load_ausencias()
-
-        with st.form("form_add_ausencia", clear_on_submit=True):
-            _fa1, _fa2, _fa3, _fa4 = st.columns([2, 1, 1, 1])
-            with _fa1:
-                _aus_consultor = st.selectbox(
-                    "Consultor", sorted(df_rec["Consultor"].dropna().unique()),
-                    key="aus_consultor_sel",
-                )
-            with _fa2:
-                _aus_inicio = st.date_input("Início", key="aus_inicio_input", format="DD/MM/YYYY")
-            with _fa3:
-                _aus_fim = st.date_input("Fim", key="aus_fim_input", format="DD/MM/YYYY")
-            with _fa4:
-                st.markdown("<div style='height:1.6rem;'></div>", unsafe_allow_html=True)
-                _aus_submit = st.form_submit_button("➕ Adicionar")
-
-        if _aus_submit:
-            if _aus_fim < _aus_inicio:
-                st.error("A data de fim não pode ser anterior à data de início.")
-            else:
-                _candidate = _ausencias + [{
-                    "Consultor":   _aus_consultor,
-                    "Data Início": _aus_inicio.strftime("%Y-%m-%d"),
-                    "Data Fim":    _aus_fim.strftime("%Y-%m-%d"),
-                }]
-                if _save_ausencias(_candidate):
-                    st.success(f"Ausência de {_aus_consultor} cadastrada e salva.")
-                    st.rerun()
-
-        if _ausencias:
-            _df_aus_view = pd.DataFrame(_ausencias).copy()
-            for _dc in ("Data Início", "Data Fim"):
-                if _dc not in _df_aus_view.columns:
-                    _df_aus_view[_dc] = ""
-            _df_aus_view["_sort"] = pd.to_datetime(_df_aus_view["Data Início"], errors="coerce")
-            _df_aus_view = _df_aus_view.sort_values("_sort", na_position="last")
-            _df_aus_view["Data Início"] = pd.to_datetime(_df_aus_view["Data Início"], errors="coerce").dt.strftime("%d/%m/%Y")
-            _df_aus_view["Data Fim"]    = pd.to_datetime(_df_aus_view["Data Fim"], errors="coerce").dt.strftime("%d/%m/%Y")
-
-            st.markdown(f"**{len(_ausencias)} ausência(s) cadastrada(s):**")
-
-            _aus_rows_html = "".join(
-                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
-                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{r.get('Consultor','')}</td>"
-                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{r.get('Data Início','')}</td>"
-                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{r.get('Data Fim','')}</td>"
-                f"</tr>"
-                for _, r in _df_aus_view.iterrows()
-            )
-            st.markdown(
-                "<div style='overflow-x:auto;'>"
-                "<table style='width:100%;border-collapse:collapse;'>"
-                "<thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>"
-                "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>"
-                "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Data Início</th>"
-                "<th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Data Fim</th>"
-                f"</tr></thead><tbody>{_aus_rows_html}</tbody></table></div>",
-                unsafe_allow_html=True,
-            )
-
-            _aus_del_options = [
-                f"{a.get('Consultor','?')} — {a.get('Data Início','?')} a {a.get('Data Fim','?')}"
-                for a in _ausencias
-            ]
-            _ad1, _ad2 = st.columns([4, 1])
-            with _ad1:
-                _aus_to_delete = st.selectbox(
-                    "Remover ausência", ["—"] + _aus_del_options, key="aus_del_sel",
-                )
-            with _ad2:
-                st.markdown("<div style='height:1.6rem;'></div>", unsafe_allow_html=True)
-                if st.button("🗑️ Remover", key="aus_del_btn") and _aus_to_delete != "—":
-                    _del_idx = _aus_del_options.index(_aus_to_delete)
-                    _candidate_del = _ausencias[:_del_idx] + _ausencias[_del_idx+1:]
-                    if _save_ausencias(_candidate_del):
-                        st.success("Ausência removida.")
-                        st.rerun()
-        else:
-            st.info("Nenhuma ausência programada cadastrada ainda.")
-
                                     # ───────────────────────────────────────────────────────────────
 # TAB 5 – Go Lives
 # ───────────────────────────────────────────────────────────────

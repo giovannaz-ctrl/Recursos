@@ -914,9 +914,19 @@ with tab1:
         st.session_state["datas_entrada"] = _datas
         if _save_datas(_updates):
             st.toast("💾 Data salva automaticamente!")
-            st.rerun()
         # if it failed, the warning from _save_datas is already shown;
         # local session_state keeps the edit so the user doesn't lose it
+
+    with st.expander("🔧 Diagnóstico de salvamento (GitHub) — temporário"):
+        st.write("PAT configurado:", bool(st.secrets.get("GITHUB_PAT", "")))
+        st.write("Repositório:", _GH_REPO, "| Arquivo:", _GH_FILE, "| Branch:", _GH_BRANCH)
+        if "_gh_debug" in st.session_state:
+            st.json(st.session_state["_gh_debug"])
+        else:
+            st.caption("Ainda não houve tentativa de salvar nesta sessão.")
+        if "_gh_debug_fetch" in st.session_state:
+            st.caption("Última leitura do GitHub:")
+            st.json(st.session_state["_gh_debug_fetch"])
 
     st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
                        file_name="alocacao_consultores.xlsx",

@@ -810,8 +810,6 @@ with tab1:
             )
 
     # ── Table ────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
-
     # Build display: pivot Principal + Sombra into same row
     if "Papel" in dft.columns and "Papel" in df1.columns:
         _prin = (dft[dft["Papel"] == "Principal"]
@@ -830,7 +828,7 @@ with tab1:
 
     # ── Tabela Detalhada + Datas editáveis ───────────────────────
     st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
-    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
+    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. A data é salva automaticamente.")
 
     _datas = st.session_state["datas_entrada"]
 
@@ -869,34 +867,34 @@ with tab1:
         key="tabela_detalhada_editor",
     )
 
-    # Detect changes and save
-    if st.button("💾 Salvar datas", key="dt_save_table"):
-        _changed = False
-        _updates = {}   # only the keys touched in this edit → sent to GitHub via merge
-        for _, _row in _edited.iterrows():
-            _cons = _row.get("Consultor Principal", "")
-            _proj = _row.get("Projeto", "")
-            if not _cons or not _proj: continue
-            _key  = _entry_key(_cons, _proj)
-            _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
-            _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
-            _cur  = _datas.get(_key, {})
-            _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
-            _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
-            if _e != _cur_e or _s != _cur_s:
-                _new_val = {"entrada": _e, "saida": _s}
-                _datas[_key] = _new_val
-                _updates[_key] = _new_val
-                _changed = True
-        if _changed:
-            st.session_state["datas_entrada"] = _datas
-            if _save_datas(_updates):
-                st.success("Datas salvas!")
-                st.rerun()
-            # if it failed, the warning from _save_datas is already shown;
-            # local session_state keeps the edit so the user doesn't lose it
-        else:
-            st.info("Nenhuma alteração detectada.")
+    # Detect changes and save automatically (no button — runs every rerun,
+    # but only actually writes when something differs from what's already
+    # stored in _datas, so it doesn't re-save on every unrelated interaction).
+    _changed = False
+    _updates = {}   # only the keys touched in this edit → sent to GitHub via merge
+    for _, _row in _edited.iterrows():
+        _cons = _row.get("Consultor Principal", "")
+        _proj = _row.get("Projeto", "")
+        if not _cons or not _proj: continue
+        _key  = _entry_key(_cons, _proj)
+        _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
+        _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
+        _cur  = _datas.get(_key, {})
+        _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
+        _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
+        if _e != _cur_e or _s != _cur_s:
+            _new_val = {"entrada": _e, "saida": _s}
+            _datas[_key] = _new_val
+            _updates[_key] = _new_val
+            _changed = True
+
+    if _changed:
+        st.session_state["datas_entrada"] = _datas
+        if _save_datas(_updates):
+            st.toast("💾 Data salva automaticamente!")
+            st.rerun()
+        # if it failed, the warning from _save_datas is already shown;
+        # local session_state keeps the edit so the user doesn't lose it
 
     st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
                        file_name="alocacao_consultores.xlsx",

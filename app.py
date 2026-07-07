@@ -1207,14 +1207,25 @@ with tab4:
         _all_cons_names = sorted(_act_names | _ws_only_names)
 
         # ── Filtro ───────────────────────────────────────────────
-        fa_cons = st.multiselect(
-            "Filtrar por Consultor",
-            _all_cons_names,
-            key="t3_cons",
-            placeholder="Todos os consultores…",
-        )
+        _fa_c1, _fa_c2 = st.columns(2)
+        with _fa_c1:
+            fa_cons = st.multiselect(
+                "Filtrar por Consultor",
+                _all_cons_names,
+                key="t3_cons",
+                placeholder="Todos os consultores…",
+            )
+        with _fa_c2:
+            fa_proj = st.multiselect(
+                "Filtrar por Projeto",
+                sorted(dfa_all["Projeto"].dropna().unique()),
+                key="t3_proj",
+                placeholder="Todos os projetos…",
+            )
         if fa_cons:
             dfa_all = dfa_all[dfa_all["Consultor"].isin(fa_cons)]
+        if fa_proj:
+            dfa_all = dfa_all[dfa_all["Projeto"].isin(fa_proj)]
 
         # Week dates
         _dates_act = dfa_all["Data"].dropna()
@@ -1313,52 +1324,31 @@ with tab4:
             st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
                         unsafe_allow_html=True)
 
-            _na_page_size = 10
-            _na_total     = len(_nao_apontaram)
-            _na_n_pages   = max(1, -(-_na_total // _na_page_size))
-
-            if "na_page" not in st.session_state:
-                st.session_state["na_page"] = 0
-            if st.session_state["na_page"] >= _na_n_pages:
-                st.session_state["na_page"] = 0
-
-            _na_p1, _na_p2, _na_p3 = st.columns([1, 6, 1])
-            with _na_p1:
-                if st.button("◀", key="na_prev") and st.session_state["na_page"] > 0:
-                    st.session_state["na_page"] -= 1
-                    st.rerun()
-            with _na_p3:
-                if st.button("▶", key="na_next") and st.session_state["na_page"] < _na_n_pages - 1:
-                    st.session_state["na_page"] += 1
-                    st.rerun()
-            with _na_p2:
-                st.markdown(
-                    f"<div style='text-align:center;padding:.3rem 0;font-size:.82rem;color:#94a3b8;'>"
-                    f"Página {st.session_state['na_page']+1} de {_na_n_pages} · "
-                    f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
-                    unsafe_allow_html=True,
-                )
-
-            _na_start = st.session_state["na_page"] * _na_page_size
-            _na_page  = _nao_apontaram[_na_start:_na_start + _na_page_size]
-
-            _rows_na = "".join(
-                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
-                f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{_na_start+i+1}.</td>"
-                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
-                f"</tr>"
-                for i, nome in enumerate(_na_page)
+            _na_total = len(_nao_apontaram)
+            st.markdown(
+                f"<div style='font-size:.82rem;color:#94a3b8;margin-bottom:.5rem;'>"
+                f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
+                unsafe_allow_html=True,
             )
-            st.markdown(f"""
-            <div style='max-width:480px;'>
-            <table style='width:100%;border-collapse:collapse;'>
-              <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
-                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
-                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
-              </tr></thead>
-              <tbody>{_rows_na}</tbody>
-            </table></div>
-            """, unsafe_allow_html=True)
+
+            _df_na = pd.DataFrame({"#": range(1, _na_total + 1), "Consultor": _nao_apontaram})
+            st.dataframe(
+                _df_na,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "#":         st.column_config.NumberColumn("#", width="small"),
+                    "Consultor": st.column_config.TextColumn("Consultor", width="large"),
+                },
+            )
+
+            st.download_button(
+                "⬇ Exportar Excel — Não apontaram",
+                to_excel_bytes(_df_na[["Consultor"]]),
+                file_name="nao_apontaram_esta_semana.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_nao_apontaram",
+            )
         else:
             st.success("✅ Todos os consultores apontaram atividades esta semana!")
 
@@ -1376,6 +1366,8 @@ with tab4:
         if fa_cons:
             _fa_emails = {_ws_name_email.get(n,"") for n in fa_cons}
             _ws_check = _ws_check[_ws_check["Email"].str.lower().isin(_fa_emails)]
+        if fa_proj:
+            _ws_check = _ws_check[_ws_check["Projeto"].isin(fa_proj)]
 
         if dfa.empty and _ws_check.empty:
             st.info("Nenhuma atividade ou workshop registrado para esta semana.")
@@ -1395,6 +1387,8 @@ with tab4:
                 (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3) &
                 (df2["Consultor"].str.strip() != "")
             ].copy()
+            if fa_proj:
+                _ws_week_all = _ws_week_all[_ws_week_all["Projeto"].isin(fa_proj)]
 
             # Build email↔name maps from df2 (email is the reliable key)
             _ws_email_map  = {}   # name  → email

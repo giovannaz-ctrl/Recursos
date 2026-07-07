@@ -1311,11 +1311,20 @@ with tab4:
             )
 
         # ── Quem não apontou esta semana ────────────────────────
-        _apontaram_emails = set(
+        # Conta como "apontou" qualquer linha de atividade da pessoa, mesmo que
+        # Projeto, Atividade ou Data estejam em branco — qualidade do preenchimento
+        # é analisada à parte, aqui só interessa saber se a pessoa registrou algo.
+        _apontaram_com_data_emails = set(
             str(r["Email"]).strip().lower()
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
+        _apontaram_sem_data_emails = set(
+            str(r["Email"]).strip().lower()
+            for _, r in df3[df3["Data"].isna()].iterrows()
+            if str(r.get("Email","")).strip()
+        )
+        _apontaram_emails = _apontaram_com_data_emails | _apontaram_sem_data_emails
         _nao_apontaram = sorted([
             str(_rr.get("Consultor","")).strip()
             for _, _rr in df_rec.iterrows()

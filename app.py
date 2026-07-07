@@ -1644,17 +1644,19 @@ with tab4:
             st.plotly_chart(fig_gantt, use_container_width=True)
 
         # ── Detail table ──────────────────────────────────────────
+        show3 = dfa[["Consultor","Projeto","Atividade","Fase","Data","Horas"]].copy()
+        if not show3.empty:
+            show3["Data"]  = show3["Data"].dt.strftime("%d/%m/%Y")
+            show3["Horas"] = show3["Horas"].round(2)
+            show3 = show3.sort_values(["Consultor","Data"])
+
         with st.expander("📄 Detalhe das atividades da semana"):
-            if dfa.empty:
+            if show3.empty:
                 st.info("Sem atividades nesta semana.")
             else:
-                show3 = dfa[["Consultor","Projeto","Atividade","Fase","Data","Horas"]].copy()
-                show3["Data"]  = show3["Data"].dt.strftime("%d/%m/%Y")
-                show3["Horas"] = show3["Horas"].round(2)
-                st.dataframe(show3.sort_values(["Consultor","Data"]),
-                             use_container_width=True, hide_index=True)
+                st.dataframe(show3, use_container_width=True, hide_index=True)
 
-        st.download_button("⬇ Exportar Excel", to_excel_bytes(dfa),
+        st.download_button("⬇ Exportar Excel", to_excel_bytes(show3),
                            file_name="planejamento_semanal.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 

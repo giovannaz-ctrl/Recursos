@@ -453,7 +453,8 @@ def load_data(file_bytes: bytes):
         hf_raw    = row.get("Hora fim") or row.get("Hora Fim")
 
         if not recurso or recurso.lower() in ("nan", "nat", "none", ""): continue
-        if not projeto or projeto.lower() in ("nan", "nat", "none", ""): continue
+        if not projeto or projeto.lower() in ("nan", "nat", "none", ""):
+            projeto = "(Sem projeto)"
 
         # Extract name and email — both old format ('Nome <email>') and new ('Nome <email>;')
         if "<" in recurso:

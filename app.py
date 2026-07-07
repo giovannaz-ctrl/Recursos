@@ -500,11 +500,10 @@ def load_data(file_bytes: bytes):
 
     # Email column is "Unnamed: 1" when header row has no label
     email_col = next((c for c in df_rec_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
-    # Cargo/função column (e.g. "Cargo", "Função", "Role") — holds values like "Gerente de Projeto"
-    cargo_col = next((c for c in df_rec_raw.columns
-                       if any(k in c.lower() for k in ("cargo", "função", "funcao", "role"))), None)
-    _non_mod_cols = {"Consultor", email_col or "", cargo_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
+    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
     modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
+    # "Gerente de Projetos" is an 'x'-flag column like the module columns, not free text
+    gp_col = next((c for c in df_rec_raw.columns if "gerente" in c.lower() and "projeto" in c.lower()), None)
 
     rec_rows = []
     for _, row in df_rec_raw.iterrows():
@@ -515,16 +514,14 @@ def load_data(file_bytes: bytes):
         specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
-        cargo_raw4   = str(row.get(cargo_col, "")).strip() if cargo_col else ""
-        if cargo_raw4.lower() in ("nan", "nat"):
-            cargo_raw4 = ""
+        is_gp4 = bool(gp_col) and str(row.get(gp_col, "")).strip().lower() == "x"
         rec_rows.append({
             "Consultor":    consultor,
             "Email":        email_raw,
             "Especialidades": specs,
             "Modulos":      ", ".join(specs),
             "Senioridade":  senioridade4,
-            "Cargo":        cargo_raw4,
+            "GerenteDeProjetos": is_gp4,
         })
 
     df_rec = pd.DataFrame(rec_rows)
@@ -1325,7 +1322,7 @@ with tab4:
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-            and str(_rr.get("Cargo","")).strip().lower() != "gerente de projeto"
+            and not bool(_rr.get("GerenteDeProjetos", False))
         ])
 
         if _nao_apontaram:

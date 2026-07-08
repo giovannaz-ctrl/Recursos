@@ -459,8 +459,14 @@ def load_data(file_bytes: bytes):
             c for c in unicodedata.normalize("NFKD", txt) if not unicodedata.combining(c)
         )
 
-    # Papéis que não devem aparecer na aba de Recursos (GP / Líder Técnico)
-    _EXCLUDED_ROLES = {"gp", "gerente de projeto", "lider tecnico", "lider tecnica"}
+    # Colunas de especialidade que, quando marcadas com "x", indicam que o
+    # consultor é Gerente de Projetos ou Líder Técnico — esses consultores não
+    # devem aparecer na aba de Recursos (nem em listas derivadas, como "Não
+    # apontaram esta semana").
+    _EXCLUDED_ROLE_COLS = [
+        c for c in modulos
+        if _strip_accents(str(c)).strip().lower() in ("gerente de projetos", "gerente de projeto", "lider tecnico", "lider tecnica")
+    ]
 
     rec_rows = []
     for _, row in df_rec_raw.iterrows():
@@ -468,11 +474,14 @@ def load_data(file_bytes: bytes):
         email_raw = str(row.get(email_col,"")).strip().lower() if email_col else ""
         if not consultor or consultor == "nan":
             continue
-        specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
+        if any(str(row.get(rc,"")).strip().lower() == "x" for rc in _EXCLUDED_ROLE_COLS):
+            continue
+        specs = [
+            m for m in modulos
+            if m not in _EXCLUDED_ROLE_COLS and str(row.get(m,"")).strip().lower() == "x"
+        ]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
-        if _strip_accents(senioridade4).strip().lower() in _EXCLUDED_ROLES:
-            continue
         rec_rows.append({
             "Consultor":    consultor,
             "Email":        email_raw,
@@ -1337,12 +1346,7 @@ with tab4:
             placeholder="Todos os projetos…",
         )
 
-        gantt_mode = st.radio(
-            "Ver por:", ["Consultor", "Projeto"],
-            horizontal=True, key="gantt_view_mode",
-            help="Agrupa as linhas do Gantt por consultor ou por projeto.",
-        )
-        group_by_project = (gantt_mode == "Projeto")
+        group_by_project = True  # Gantt agrupado sempre por Projeto
 
         # Effective filters for the Gantt only: the local filter above takes
         # precedence; if left empty, falls back to the tab-wide filter.

@@ -10,6 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import re
+import unicodedata
 from io import BytesIO
 import json, os
 
@@ -222,14 +223,8 @@ def load_data(file_bytes: bytes):
     df_cockpit_raw = pd.read_excel(BytesIO(file_bytes), sheet_name=sheets[s1_key] if s1_key else 0)
     df_cockpit_raw.columns = [c.strip() for c in df_cockpit_raw.columns]
 
-    # Papéis de gestão/liderança: não são alocação técnica, então são
-    # capturados à parte (Projeto → Nome) e não entram no Treemap, nos
-    # cálculos de slot/complexidade nem no filtro de "Módulo".
-    SPECIAL_ROLES = ["Gerente de Projeto", "Líder Técnico"]
-
     rows = []
     vagas_rows = []
-    special_role_rows = []
     for _, row in df_cockpit_raw.iterrows():
         projeto = str(row.get("Projeto", "")).strip()
         perfil  = str(row.get("Perfil", "")).strip()
@@ -239,18 +234,6 @@ def load_data(file_bytes: bytes):
         if not projeto or projeto == "nan":
             continue
         client = get_client_from_project(projeto)
-
-        if perfil in SPECIAL_ROLES:
-            for part in (raw_prin.split(",") if raw_prin.strip() not in ("", "nan") else []):
-                name  = extract_name(part.strip())
-                email = extract_email(part.strip())
-                if not name or name.lower() == "nan":
-                    continue
-                special_role_rows.append({
-                    "Projeto": projeto, "Cliente": client,
-                    "Papel": perfil, "Nome": name, "Email": email,
-                })
-            continue
         golive_raw  = row.get("Go line") or row.get("Go Live") or row.get("Go live")
         golive      = pd.Timestamp(golive_raw) if golive_raw is not None and pd.notna(golive_raw) else None
         senior_raw  = row.get("Senioridade", None)
@@ -299,24 +282,6 @@ def load_data(file_bytes: bytes):
                                    "Peso Dedicação": dedicacao, "GoLive": golive})
 
     df1 = pd.DataFrame(rows).drop_duplicates()
-
-    # ── Papéis de gestão/liderança (Gerente de Projeto, Líder Técnico...) ──
-    # Uma coluna por papel, mesclada em df1 por Projeto.
-    df_papeis = pd.DataFrame(special_role_rows).drop_duplicates()
-    for _role in SPECIAL_ROLES:
-        if not df_papeis.empty and _role in df_papeis["Papel"].values:
-            _map = (df_papeis[df_papeis["Papel"] == _role]
-                    .drop_duplicates(subset=["Projeto"])[["Projeto", "Nome"]]
-                    .rename(columns={"Nome": _role}))
-            df1 = df1.merge(_map, on="Projeto", how="left")
-        else:
-            df1[_role] = None
-        df1[_role] = df1[_role].fillna("— Não definido —")
-
-    # Mantém nome legado para compatibilidade (usado em outras partes do app)
-    df_gerentes = (df_papeis[df_papeis["Papel"] == "Gerente de Projeto"]
-                   .rename(columns={"Nome": "Gerente de Projeto", "Email": "Email Gerente"})
-                   if not df_papeis.empty else pd.DataFrame(columns=["Projeto","Cliente","Gerente de Projeto","Email Gerente"]))
 
     # ── Go Live conflict table ────────────────────────────────────
     _gl_cols = ["Consultor","Email","Cliente","Projeto","GoLive"]
@@ -486,11 +451,16 @@ def load_data(file_bytes: bytes):
 
     # Email column is "Unnamed: 1" when header row has no label
     email_col = next((c for c in df_rec_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
-    # Papéis de gestão/liderança (Gerente de Projetos, Líder Técnico...) não são
-    # módulos técnicos — não podem contar como especialidade/capacidade de consultor.
-    LEADERSHIP_COLS = ["Gerente de Projetos", "Líder Técnico"]
-    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0", *LEADERSHIP_COLS}
+    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
     modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
+
+    def _strip_accents(txt):
+        return "".join(
+            c for c in unicodedata.normalize("NFKD", txt) if not unicodedata.combining(c)
+        )
+
+    # Papéis que não devem aparecer na aba de Recursos (GP / Líder Técnico)
+    _EXCLUDED_ROLES = {"gp", "gerente de projeto", "lider tecnico", "lider tecnica"}
 
     rec_rows = []
     for _, row in df_rec_raw.iterrows():
@@ -499,15 +469,15 @@ def load_data(file_bytes: bytes):
         if not consultor or consultor == "nan":
             continue
         specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
-        lideranca = [r for r in LEADERSHIP_COLS if str(row.get(r,"")).strip().lower() == "x"]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
+        if _strip_accents(senioridade4).strip().lower() in _EXCLUDED_ROLES:
+            continue
         rec_rows.append({
             "Consultor":    consultor,
             "Email":        email_raw,
             "Especialidades": specs,
             "Modulos":      ", ".join(specs),
-            "Papéis de Liderança": lideranca,
             "Senioridade":  senioridade4,
         })
 
@@ -534,7 +504,7 @@ def load_data(file_bytes: bytes):
         except Exception:
             pass
 
-    return df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring, df_gerentes, df_papeis
+    return df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring
 
 
 def kpi_html(value, label, variant=""):
@@ -593,7 +563,7 @@ with st.spinner("Processando dados…"):
         except Exception as e:
             st.error(f"Não foi possível carregar o arquivo do repositório: {e}")
             st.stop()
-    df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring, df_gerentes, df_papeis = load_data(file_bytes)
+    df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring = load_data(file_bytes)
 
 
 # Build project→color map (shared across tabs)
@@ -639,7 +609,7 @@ with tab1:
 
     # ── Filters ─────────────────────────────────────────────────
     with st.expander("🔍 Filtros", expanded=False):
-        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+        c1, c2, c3, c4, c5 = st.columns(5)
         f_cons  = c1.multiselect("Consultor",  sorted(df1["Consultor"].dropna().unique()), key="t1_cons")
         f_proj  = c2.multiselect("Projeto",    sorted(df1["Projeto"].dropna().unique()),   key="t1_proj")
         f_cli   = c3.multiselect("Cliente",    sorted(df1["Cliente"].dropna().unique()),   key="t1_cli")
@@ -647,37 +617,20 @@ with tab1:
         _all_mods = sorted(set(df1["Módulo"].dropna().unique()) | set(df_vagas["Perfil"].dropna().unique()))
         f_mod   = c4.multiselect("Módulo", _all_mods, key="t1_mod")
         f_fase  = c5.multiselect("Fase",       sorted(df1["Fase"].dropna().unique()) if "Fase" in df1.columns else [], key="t1_fase")
-        f_ger   = c6.multiselect("Gerente de Projeto", sorted(df1["Gerente de Projeto"].dropna().unique()), key="t1_ger")
-        f_lider = c7.multiselect("Líder Técnico", sorted(df1["Líder Técnico"].dropna().unique()), key="t1_lider")
 
     dft = df1.copy()
-    if f_cons:  dft = dft[dft["Consultor"].isin(f_cons)]
-    if f_proj:  dft = dft[dft["Projeto"].isin(f_proj)]
-    if f_cli:   dft = dft[dft["Cliente"].isin(f_cli)]
-    if f_mod:   dft = dft[dft["Módulo"].isin(f_mod)]
-    if f_fase:  dft = dft[dft["Fase"].isin(f_fase)]
-    if f_ger:   dft = dft[dft["Gerente de Projeto"].isin(f_ger)]
-    if f_lider: dft = dft[dft["Líder Técnico"].isin(f_lider)]
+    if f_cons: dft = dft[dft["Consultor"].isin(f_cons)]
+    if f_proj: dft = dft[dft["Projeto"].isin(f_proj)]
+    if f_cli:  dft = dft[dft["Cliente"].isin(f_cli)]
+    if f_mod:  dft = dft[dft["Módulo"].isin(f_mod)]
+    if f_fase: dft = dft[dft["Fase"].isin(f_fase)]
 
     # Also filter vagas by same filters
     df_vagas_f_tab1 = df_vagas.copy()
-    for _role in ["Gerente de Projeto", "Líder Técnico"]:
-        if not df_papeis.empty and _role in df_papeis["Papel"].values:
-            df_vagas_f_tab1 = df_vagas_f_tab1.merge(
-                df_papeis[df_papeis["Papel"] == _role]
-                    .drop_duplicates(subset=["Projeto"])[["Projeto", "Nome"]]
-                    .rename(columns={"Nome": _role}),
-                on="Projeto", how="left",
-            )
-        else:
-            df_vagas_f_tab1[_role] = None
-        df_vagas_f_tab1[_role] = df_vagas_f_tab1[_role].fillna("— Não definido —")
-    if f_proj:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Projeto"].isin(f_proj)]
-    if f_cli:   df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Cliente"].isin(f_cli)]
-    if f_mod:   df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Perfil"].isin(f_mod)]
-    if f_fase:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Fase"].isin(f_fase)] if "Fase" in df_vagas_f_tab1.columns else df_vagas_f_tab1
-    if f_ger:   df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Gerente de Projeto"].isin(f_ger)]
-    if f_lider: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Líder Técnico"].isin(f_lider)]
+    if f_proj: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Projeto"].isin(f_proj)]
+    if f_cli:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Cliente"].isin(f_cli)]
+    if f_mod:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Perfil"].isin(f_mod)]
+    if f_fase: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Fase"].isin(f_fase)] if "Fase" in df_vagas_f_tab1.columns else df_vagas_f_tab1
 
     # Global max (unfiltered) keeps color scale stable across filters
     _global_max_proj = max(df1.groupby("Consultor")["Projeto"].nunique().max(), 2)
@@ -719,8 +672,6 @@ with tab1:
     # Deduplicate: each project counts once per consultant regardless of role
     _dedup_senior = dft_senior.drop_duplicates(subset=["Consultor","Projeto"])
     _fase_map = _dedup_senior.set_index(["Consultor","Projeto"])["Fase"].to_dict() if "Fase" in _dedup_senior.columns else {}
-    _ger_map  = _dedup_senior.set_index(["Consultor","Projeto"])["Gerente de Projeto"].to_dict() if "Gerente de Projeto" in _dedup_senior.columns else {}
-    _lid_map  = _dedup_senior.set_index(["Consultor","Projeto"])["Líder Técnico"].to_dict() if "Líder Técnico" in _dedup_senior.columns else {}
     treemap_df = (
         _dedup_senior
            .groupby(["Consultor","Projeto"])
@@ -729,12 +680,6 @@ with tab1:
     )
     if _fase_map:
         treemap_df["Fase"] = treemap_df.apply(lambda r: _fase_map.get((r["Consultor"],r["Projeto"]),"—"), axis=1)
-    treemap_df["Gerente de Projeto"] = treemap_df.apply(
-        lambda r: _ger_map.get((r["Consultor"], r["Projeto"]), "—"), axis=1
-    )
-    treemap_df["Líder Técnico"] = treemap_df.apply(
-        lambda r: _lid_map.get((r["Consultor"], r["Projeto"]), "—"), axis=1
-    )
     # Add Fase badge to project label in treemap
     if "Fase" in treemap_df.columns:
         _fase_badge = {"Realize": "🟢", "Prepare": "🔵", "Explore": "🟡"}
@@ -759,16 +704,10 @@ with tab1:
                 [1.0,  "#b71c1c"],
             ],
             range_color=[1, _global_max_proj],
-            custom_data=["Projetos", "Gerente de Projeto", "Líder Técnico"],
+            custom_data=["Projetos"],
         )
         fig_tree.update_traces(
-            hovertemplate=(
-                "<b>%{label}</b><br>"
-                "Projetos: %{customdata[0]}<br>"
-                "🧑‍💼 Gerente de Projeto: %{customdata[1]}<br>"
-                "🛠️ Líder Técnico: %{customdata[2]}"
-                "<extra></extra>"
-            ),
+            hovertemplate="<b>%{label}</b><br>Projetos: %{customdata[0]}<extra></extra>",
             textfont_size=11,
             textfont_family="Inter",
             marker_line_width=2,
@@ -849,7 +788,7 @@ with tab1:
                 unsafe_allow_html=True,
             )
             st.dataframe(
-                detail[["Consultor","Projeto","Cliente","M\xf3dulo","Gerente de Projeto","Líder Técnico"]].drop_duplicates(),
+                detail[["Consultor","Projeto","Cliente","M\xf3dulo"]].drop_duplicates(),
                 use_container_width=True, hide_index=True,
             )
 
@@ -859,19 +798,21 @@ with tab1:
     # Build display: pivot Principal + Sombra into same row
     if "Papel" in dft.columns and "Papel" in df1.columns:
         _prin = (dft[dft["Papel"] == "Principal"]
-                 [["Cliente","Projeto","Fase","Módulo","Consultor","Gerente de Projeto","Líder Técnico"]]
+                 [["Cliente","Projeto","Fase","Módulo","Consultor"]]
                  .rename(columns={"Consultor":"Consultor Principal"}))
         _somb = (df1[df1["Papel"] == "Sombra"]
                  [["Projeto","Módulo","Consultor"]]
                  .rename(columns={"Consultor":"Consultor Sombra"})
                  .drop_duplicates())
         display = _prin.merge(_somb, on=["Projeto","Módulo"], how="left")
-        display = display[["Cliente","Projeto","Fase","Módulo","Consultor Principal","Consultor Sombra","Gerente de Projeto","Líder Técnico"]].drop_duplicates()
+        display = display[["Cliente","Projeto","Fase","Módulo","Consultor Principal","Consultor Sombra"]].drop_duplicates()
         display["Consultor Sombra"] = display["Consultor Sombra"].fillna("—")
     else:
-        display = dft[["Consultor","Cliente","Projeto","Módulo","Gerente de Projeto","Líder Técnico"]].copy()
+        display = dft[["Consultor","Cliente","Projeto","Módulo"]].copy()
         display.rename(columns={"Consultor":"Consultor Principal"}, inplace=True)
 
+    # ── Tabela Detalhada + Datas editáveis ───────────────────────
+    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
     st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
 
     _datas = st.session_state["datas_entrada"]
@@ -905,8 +846,6 @@ with tab1:
             "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
             "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
             "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
-            "Gerente de Projeto":   st.column_config.TextColumn("🧑‍💼 Gerente de Projeto", width="medium", disabled=True),
-            "Líder Técnico":        st.column_config.TextColumn("🛠️ Líder Técnico",        width="medium", disabled=True),
             "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
             "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
         },

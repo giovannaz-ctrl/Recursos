@@ -486,7 +486,10 @@ def load_data(file_bytes: bytes):
 
     # Email column is "Unnamed: 1" when header row has no label
     email_col = next((c for c in df_rec_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
-    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
+    # Papéis de gestão/liderança (Gerente de Projetos, Líder Técnico...) não são
+    # módulos técnicos — não podem contar como especialidade/capacidade de consultor.
+    LEADERSHIP_COLS = ["Gerente de Projetos", "Líder Técnico"]
+    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0", *LEADERSHIP_COLS}
     modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
 
     rec_rows = []
@@ -496,6 +499,7 @@ def load_data(file_bytes: bytes):
         if not consultor or consultor == "nan":
             continue
         specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
+        lideranca = [r for r in LEADERSHIP_COLS if str(row.get(r,"")).strip().lower() == "x"]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
         rec_rows.append({
@@ -503,6 +507,7 @@ def load_data(file_bytes: bytes):
             "Email":        email_raw,
             "Especialidades": specs,
             "Modulos":      ", ".join(specs),
+            "Papéis de Liderança": lideranca,
             "Senioridade":  senioridade4,
         })
 
@@ -714,6 +719,8 @@ with tab1:
     # Deduplicate: each project counts once per consultant regardless of role
     _dedup_senior = dft_senior.drop_duplicates(subset=["Consultor","Projeto"])
     _fase_map = _dedup_senior.set_index(["Consultor","Projeto"])["Fase"].to_dict() if "Fase" in _dedup_senior.columns else {}
+    _ger_map  = _dedup_senior.set_index(["Consultor","Projeto"])["Gerente de Projeto"].to_dict() if "Gerente de Projeto" in _dedup_senior.columns else {}
+    _lid_map  = _dedup_senior.set_index(["Consultor","Projeto"])["Líder Técnico"].to_dict() if "Líder Técnico" in _dedup_senior.columns else {}
     treemap_df = (
         _dedup_senior
            .groupby(["Consultor","Projeto"])
@@ -722,6 +729,12 @@ with tab1:
     )
     if _fase_map:
         treemap_df["Fase"] = treemap_df.apply(lambda r: _fase_map.get((r["Consultor"],r["Projeto"]),"—"), axis=1)
+    treemap_df["Gerente de Projeto"] = treemap_df.apply(
+        lambda r: _ger_map.get((r["Consultor"], r["Projeto"]), "—"), axis=1
+    )
+    treemap_df["Líder Técnico"] = treemap_df.apply(
+        lambda r: _lid_map.get((r["Consultor"], r["Projeto"]), "—"), axis=1
+    )
     # Add Fase badge to project label in treemap
     if "Fase" in treemap_df.columns:
         _fase_badge = {"Realize": "🟢", "Prepare": "🔵", "Explore": "🟡"}
@@ -746,10 +759,16 @@ with tab1:
                 [1.0,  "#b71c1c"],
             ],
             range_color=[1, _global_max_proj],
-            custom_data=["Projetos"],
+            custom_data=["Projetos", "Gerente de Projeto", "Líder Técnico"],
         )
         fig_tree.update_traces(
-            hovertemplate="<b>%{label}</b><br>Projetos: %{customdata[0]}<extra></extra>",
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Projetos: %{customdata[0]}<br>"
+                "🧑‍💼 Gerente de Projeto: %{customdata[1]}<br>"
+                "🛠️ Líder Técnico: %{customdata[2]}"
+                "<extra></extra>"
+            ),
             textfont_size=11,
             textfont_family="Inter",
             marker_line_width=2,

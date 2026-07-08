@@ -1154,15 +1154,24 @@ with tab4:
         }
         _all_cons_names = sorted(_act_names | _ws_only_names)
 
-        # ── Filtro ───────────────────────────────────────────────
-        fa_cons = st.multiselect(
+        # ── Filtros ──────────────────────────────────────────────
+        _fc1, _fc2 = st.columns(2)
+        fa_cons = _fc1.multiselect(
             "Filtrar por Consultor",
             _all_cons_names,
             key="t3_cons",
             placeholder="Todos os consultores…",
         )
+        fa_proj = _fc2.multiselect(
+            "Filtrar por Projeto",
+            all_projects,
+            key="t3_proj",
+            placeholder="Todos os projetos…",
+        )
         if fa_cons:
             dfa_all = dfa_all[dfa_all["Consultor"].isin(fa_cons)]
+        if fa_proj:
+            dfa_all = dfa_all[dfa_all["Projeto"].isin(fa_proj)]
 
         # Week dates
         _dates_act = dfa_all["Data"].dropna()
@@ -1327,10 +1336,12 @@ with tab4:
             (df2["DataInicio"] <= week_end3) &
             (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
         ]
-        # Filter by selected consultants if any
+        # Filter by selected consultants / project if any
         if fa_cons:
             _fa_emails = {_ws_name_email.get(n,"") for n in fa_cons}
             _ws_check = _ws_check[_ws_check["Email"].str.lower().isin(_fa_emails)]
+        if fa_proj:
+            _ws_check = _ws_check[_ws_check["Projeto"].isin(fa_proj)]
 
         if dfa.empty and _ws_check.empty:
             st.info("Nenhuma atividade ou workshop registrado para esta semana.")
@@ -1350,6 +1361,8 @@ with tab4:
                 (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3) &
                 (df2["Consultor"].str.strip() != "")
             ].copy()
+            if fa_proj:
+                _ws_week_all = _ws_week_all[_ws_week_all["Projeto"].isin(fa_proj)]
 
             # Build email↔name maps from df2 (email is the reliable key)
             _ws_email_map  = {}   # name  → email
@@ -1411,6 +1424,8 @@ with tab4:
                     (df2["DataInicio"] <= week_end3) &
                     (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
                 ]
+                if fa_proj:
+                    ws_by_consultant[c] = ws_by_consultant[c][ws_by_consultant[c]["Projeto"].isin(fa_proj)]
 
             # ── Build row ordering: one row per consultant, or per (Projeto, Consultor) ──
             def _row_key(cons, proj):

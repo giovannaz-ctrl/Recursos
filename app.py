@@ -1323,12 +1323,37 @@ with tab4:
 
         st.markdown('<div class="section-title">Gantt da Semana</div>', unsafe_allow_html=True)
 
+        _g1, _g2 = st.columns(2)
+        fa_cons_g = _g1.multiselect(
+            "Filtrar por Consultor",
+            _all_cons_names,
+            key="t3_gantt_cons",
+            placeholder="Todos os consultores…",
+        )
+        fa_proj_g = _g2.multiselect(
+            "Filtrar por Projeto",
+            all_projects,
+            key="t3_gantt_proj",
+            placeholder="Todos os projetos…",
+        )
+
         gantt_mode = st.radio(
             "Ver por:", ["Consultor", "Projeto"],
             horizontal=True, key="gantt_view_mode",
             help="Agrupa as linhas do Gantt por consultor ou por projeto.",
         )
         group_by_project = (gantt_mode == "Projeto")
+
+        # Effective filters for the Gantt only: the local filter above takes
+        # precedence; if left empty, falls back to the tab-wide filter.
+        _eff_cons = fa_cons_g if fa_cons_g else fa_cons
+        _eff_proj = fa_proj_g if fa_proj_g else fa_proj
+
+        dfa_g = dfa.copy()
+        if fa_cons_g:
+            dfa_g = dfa_g[dfa_g["Consultor"].isin(fa_cons_g)]
+        if fa_proj_g:
+            dfa_g = dfa_g[dfa_g["Projeto"].isin(fa_proj_g)]
 
         # Check if there are workshops this week even if no activities
         _ws_check = df2[
@@ -1337,13 +1362,13 @@ with tab4:
             (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
         ]
         # Filter by selected consultants / project if any
-        if fa_cons:
-            _fa_emails = {_ws_name_email.get(n,"") for n in fa_cons}
+        if _eff_cons:
+            _fa_emails = {_ws_name_email.get(n,"") for n in _eff_cons}
             _ws_check = _ws_check[_ws_check["Email"].str.lower().isin(_fa_emails)]
-        if fa_proj:
-            _ws_check = _ws_check[_ws_check["Projeto"].isin(fa_proj)]
+        if _eff_proj:
+            _ws_check = _ws_check[_ws_check["Projeto"].isin(_eff_proj)]
 
-        if dfa.empty and _ws_check.empty:
+        if dfa_g.empty and _ws_check.empty:
             st.info("Nenhuma atividade ou workshop registrado para esta semana.")
         else:
             days_of_week = [week_start3 + timedelta(d) for d in range(5)]
@@ -1361,8 +1386,8 @@ with tab4:
                 (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3) &
                 (df2["Consultor"].str.strip() != "")
             ].copy()
-            if fa_proj:
-                _ws_week_all = _ws_week_all[_ws_week_all["Projeto"].isin(fa_proj)]
+            if _eff_proj:
+                _ws_week_all = _ws_week_all[_ws_week_all["Projeto"].isin(_eff_proj)]
 
             # Build email↔name maps from df2 (email is the reliable key)
             _ws_email_map  = {}   # name  → email
@@ -1375,7 +1400,7 @@ with tab4:
                     _ws_name_map[_we]  = _wn
 
             # Build email map from activities
-            _act_email_map = dfa.groupby("Consultor")["Email"].first().to_dict()
+            _act_email_map = dfa_g.groupby("Consultor")["Email"].first().to_dict() if not dfa_g.empty else {}
             # email → canonical name (prefer activity name, fallback to workshop name)
             _email_to_name = {v.lower(): k for k, v in _act_email_map.items() if v}
             for _we, _wn in _ws_name_map.items():
@@ -1387,10 +1412,10 @@ with tab4:
             _all_emails |= set(_ws_name_map.keys())
             all_cons_set = {_email_to_name[e] for e in _all_emails if e in _email_to_name}
 
-            # Apply fa_cons filter to gantt consultant list
-            if fa_cons:
+            # Apply effective consultant filter to gantt consultant list
+            if _eff_cons:
                 _fa_emails_g = set()
-                for _fn in fa_cons:
+                for _fn in _eff_cons:
                     _fe = _ws_name_email.get(_fn, "")
                     if not _fe:
                         _rows = dfa_all[dfa_all["Consultor"] == _fn]["Email"]
@@ -1400,7 +1425,7 @@ with tab4:
                     nm for nm in all_cons_set
                     if _ws_email_map.get(nm, "").lower() in _fa_emails_g
                     or _act_email_map.get(nm, "").lower() in _fa_emails_g
-                    or nm in fa_cons
+                    or nm in _eff_cons
                 }
 
             consultores = sorted(all_cons_set)
@@ -1424,8 +1449,8 @@ with tab4:
                     (df2["DataInicio"] <= week_end3) &
                     (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
                 ]
-                if fa_proj:
-                    ws_by_consultant[c] = ws_by_consultant[c][ws_by_consultant[c]["Projeto"].isin(fa_proj)]
+                if _eff_proj:
+                    ws_by_consultant[c] = ws_by_consultant[c][ws_by_consultant[c]["Projeto"].isin(_eff_proj)]
 
             # ── Build row ordering: one row per consultant, or per (Projeto, Consultor) ──
             def _row_key(cons, proj):
@@ -1433,7 +1458,7 @@ with tab4:
 
             if group_by_project:
                 _pairs = set()
-                for _, _r in dfa.iterrows():
+                for _, _r in dfa_g.iterrows():
                     _pairs.add((_r["Projeto"], _r["Consultor"]))
                 for _c, _wsw in ws_by_consultant.items():
                     for _, _wr in _wsw.iterrows():
@@ -1512,7 +1537,7 @@ with tab4:
             added_projects  = set()
             added_workshops = set()
 
-            for _, row in dfa.iterrows():
+            for _, row in dfa_g.iterrows():
                 c     = row["Consultor"]
                 proj  = row["Projeto"]
                 atv   = row["Atividade"]

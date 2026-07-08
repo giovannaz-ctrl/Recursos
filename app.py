@@ -1451,13 +1451,6 @@ with tab4:
                         fillcolor="#f8fafc" if gi % 2 == 0 else "white",
                         line_width=0, layer="below",
                     )
-                    fig_gantt.add_annotation(
-                        xref="paper", x=0.01, xanchor="left",
-                        yref="y", y=(y_min + y_max) / 2,
-                        text=f"<b>{p}</b>",
-                        showarrow=False, align="left",
-                        font=dict(size=11, color="#334155"),
-                    )
                     if gi > 0:
                         fig_gantt.add_shape(
                             type="line",
@@ -1616,11 +1609,23 @@ with tab4:
                 legendgroup="__legend_ws",
             ))
 
+            def _proj_short(p, n=26):
+                p = str(p)
+                return p if len(p) <= n else p[: n - 1] + "…"
+
+            if group_by_project:
+                _yticktext = [
+                    f'<span style="color:#94a3b8;font-size:10px;">{_proj_short(p)}</span><br><b>{c}</b>'
+                    for (p, c) in row_y.keys()
+                ]
+            else:
+                _yticktext = list(row_y.keys())
+
             # Axes config
             fig_gantt.update_layout(
                 barmode="overlay",
-                height=max(260, n_rows * 44 + 80),
-                margin=dict(l=170 if group_by_project else 0, r=0, t=60, b=20),
+                height=max(260, n_rows * 50 + 80) if group_by_project else max(260, n_rows * 44 + 80),
+                margin=dict(l=10, r=0, t=60, b=20),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
                 showlegend=True,
@@ -1648,7 +1653,8 @@ with tab4:
                 yaxis=dict(
                     tickmode="array",
                     tickvals=list(row_y.values()),
-                    ticktext=[(k[1] if group_by_project else k) for k in row_y.keys()],
+                    ticktext=_yticktext,
+                    automargin=True,
                     showgrid=False,
                     zeroline=False,
                     fixedrange=True,

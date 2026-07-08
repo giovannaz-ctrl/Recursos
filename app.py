@@ -1312,7 +1312,14 @@ with tab4:
 
         st.markdown("---")
 
-        st.markdown('<div class="section-title">Gantt da Semana por Consultor</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Gantt da Semana</div>', unsafe_allow_html=True)
+
+        gantt_mode = st.radio(
+            "Ver por:", ["Consultor", "Projeto"],
+            horizontal=True, key="gantt_view_mode",
+            help="Agrupa as linhas do Gantt por consultor ou por projeto.",
+        )
+        group_by_project = (gantt_mode == "Projeto")
 
         # Check if there are workshops this week even if no activities
         _ws_check = df2[
@@ -1332,7 +1339,7 @@ with tab4:
             day_names3   = ["Seg","Ter","Qua","Qui","Sex"]
 
             # Build one Gantt bar per (Consultor, Projeto, Atividade, Data)
-            # x-axis: days of the week; y-axis: consultants
+            # x-axis: days of the week; y-axis: consultants (or projeto → consultor)
             # Each bar spans from HorasIni to HorasFim on the given day.
             # We use a Plotly figure with shapes for precision.
 
@@ -1384,27 +1391,97 @@ with tab4:
                 }
 
             consultores = sorted(all_cons_set)
-            # y positions: one row per consultant (bottom to top in plotly = reversed list)
-            cons_y = {c: i for i, c in enumerate(reversed(consultores))}
+
+            # Unified email map: name → email (needed to look up each consultant's workshops)
+            email_map3 = {**{v: k for k, v in _email_to_name.items()}, **_act_email_map}
+            for _wc, _we in _ws_email_map.items():
+                if _wc not in email_map3:
+                    email_map3[_wc] = _we
+
+            # Pre-compute each consultant's workshops this week (reused for grouping + drawing)
+            ws_by_consultant = {}
+            for c in consultores:
+                c_email = email_map3.get(c, "").lower()
+                if not c_email:
+                    ws_by_consultant[c] = df2.iloc[0:0]
+                    continue
+                ws_by_consultant[c] = df2[
+                    (df2["Email"].str.lower() == c_email) &
+                    (df2["DataInicio"].notna()) &
+                    (df2["DataInicio"] <= week_end3) &
+                    (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
+                ]
+
+            # ── Build row ordering: one row per consultant, or per (Projeto, Consultor) ──
+            def _row_key(cons, proj):
+                return (proj, cons) if group_by_project else cons
+
+            if group_by_project:
+                _pairs = set()
+                for _, _r in dfa.iterrows():
+                    _pairs.add((_r["Projeto"], _r["Consultor"]))
+                for _c, _wsw in ws_by_consultant.items():
+                    for _, _wr in _wsw.iterrows():
+                        _pairs.add((_wr["Projeto"], _c))
+                _projects_sorted = sorted({p for p, _ in _pairs})
+                row_order = []
+                for p in _projects_sorted:
+                    for c in sorted({cc for (pp, cc) in _pairs if pp == p}):
+                        row_order.append((p, c))
+            else:
+                row_order = consultores
+
+            n_rows = len(row_order)
+            row_y  = {key: i for i, key in enumerate(reversed(row_order))}
 
             fig_gantt = go.Figure()
 
-            # Background alternating bands per consultant row
-            for c, yi in cons_y.items():
-                fig_gantt.add_shape(
-                    type="rect",
-                    x0=-0.5, x1=4.5,
-                    y0=yi - 0.45, y1=yi + 0.45,
-                    fillcolor="#f8fafc" if yi % 2 == 0 else "white",
-                    line_width=0, layer="below",
-                )
+            # ── Background bands ─────────────────────────────────
+            if group_by_project:
+                # Shade + separate by project group, label the group in the left margin
+                _group_bounds = []  # (proj, y_min, y_max)
+                for p in _projects_sorted:
+                    ys = [row_y[k] for k in row_order if k[0] == p]
+                    _group_bounds.append((p, min(ys), max(ys)))
+                for gi, (p, y_min, y_max) in enumerate(_group_bounds):
+                    fig_gantt.add_shape(
+                        type="rect",
+                        x0=-0.5, x1=4.5,
+                        y0=y_min - 0.45, y1=y_max + 0.45,
+                        fillcolor="#f8fafc" if gi % 2 == 0 else "white",
+                        line_width=0, layer="below",
+                    )
+                    fig_gantt.add_annotation(
+                        xref="paper", x=0.01, xanchor="left",
+                        yref="y", y=(y_min + y_max) / 2,
+                        text=f"<b>{p}</b>",
+                        showarrow=False, align="left",
+                        font=dict(size=11, color="#334155"),
+                    )
+                    if gi > 0:
+                        fig_gantt.add_shape(
+                            type="line",
+                            x0=-0.5, x1=4.5,
+                            y0=y_max + 0.5, y1=y_max + 0.5,
+                            line=dict(color="#cbd5e1", width=1.5), layer="below",
+                        )
+            else:
+                # Background alternating bands per consultant row
+                for c, yi in row_y.items():
+                    fig_gantt.add_shape(
+                        type="rect",
+                        x0=-0.5, x1=4.5,
+                        y0=yi - 0.45, y1=yi + 0.45,
+                        fillcolor="#f8fafc" if yi % 2 == 0 else "white",
+                        line_width=0, layer="below",
+                    )
 
             # Day separator lines
             for d in range(5):
                 fig_gantt.add_shape(
                     type="line",
                     x0=d - 0.5, x1=d - 0.5,
-                    y0=-0.5, y1=len(consultores) - 0.5,
+                    y0=-0.5, y1=n_rows - 0.5,
                     line=dict(color="#e2e8f0", width=1), layer="below",
                 )
 
@@ -1415,7 +1492,7 @@ with tab4:
                 fig_gantt.add_shape(
                     type="rect",
                     x0=today_x - 0.48, x1=today_x + 0.48,
-                    y0=-0.5, y1=len(consultores) - 0.5,
+                    y0=-0.5, y1=n_rows - 0.5,
                     fillcolor="#eef2ff", line_width=0, layer="below",
                 )
 
@@ -1439,7 +1516,7 @@ with tab4:
                 if day_x < 0 or day_x > 4:
                     continue
 
-                yi     = cons_y.get(c, 0)
+                yi     = row_y.get(_row_key(c, proj), 0)
                 color  = proj_color.get(proj, "#6366f1")
                 day_hours = 9.0
                 x_start = day_x + (h_ini - 9.0) / day_hours * 0.9 - 0.45
@@ -1475,24 +1552,8 @@ with tab4:
                 ))
 
             # ── Workshop bars (lower half of row, slate color) ────
-            # Unified email map: name → email
-            email_map3 = {**{v: k for k, v in _email_to_name.items()}, **_act_email_map}
-            # Also direct name→email from workshop map
-            for _wc, _we in _ws_email_map.items():
-                if _wc not in email_map3:
-                    email_map3[_wc] = _we
-
             for c in consultores:
-                c_email = email_map3.get(c, "").lower()
-                if not c_email:
-                    continue
-                # Find workshops for this consultant in this week
-                ws_week = df2[
-                    (df2["Email"].str.lower() == c_email) &
-                    (df2["DataInicio"].notna()) &
-                    (df2["DataInicio"] <= week_end3) &
-                    (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
-                ]
+                ws_week = ws_by_consultant.get(c, df2.iloc[0:0])
                 for _, wrow in ws_week.iterrows():
                     ws_name = wrow["Workshop"]
                     ws_proj = wrow["Projeto"]
@@ -1503,7 +1564,7 @@ with tab4:
                         day_x = (d_cur - week_start3).days
                         if day_x < 0 or day_x > 4:
                             continue
-                        yi = cons_y.get(c, 0)
+                        yi = row_y.get(_row_key(c, ws_proj), 0)
                         ws_key = f"WS_{ws_name}"
                         show_ws_legend = ws_key not in added_workshops
                         added_workshops.add(ws_key)
@@ -1558,8 +1619,8 @@ with tab4:
             # Axes config
             fig_gantt.update_layout(
                 barmode="overlay",
-                height=max(260, len(consultores) * 44 + 80),
-                margin=dict(l=0, r=0, t=60, b=20),
+                height=max(260, n_rows * 44 + 80),
+                margin=dict(l=170 if group_by_project else 0, r=0, t=60, b=20),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
                 showlegend=True,
@@ -1586,8 +1647,8 @@ with tab4:
                 ),
                 yaxis=dict(
                     tickmode="array",
-                    tickvals=list(cons_y.values()),
-                    ticktext=list(cons_y.keys()),
+                    tickvals=list(row_y.values()),
+                    ticktext=[(k[1] if group_by_project else k) for k in row_y.keys()],
                     showgrid=False,
                     zeroline=False,
                     fixedrange=True,

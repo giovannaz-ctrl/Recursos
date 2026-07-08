@@ -872,8 +872,6 @@ with tab1:
         display = dft[["Consultor","Cliente","Projeto","Módulo","Gerente de Projeto","Líder Técnico"]].copy()
         display.rename(columns={"Consultor":"Consultor Principal"}, inplace=True)
 
-    # ── Tabela Detalhada + Datas editáveis ───────────────────────
-    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
     st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
 
     _datas = st.session_state["datas_entrada"]

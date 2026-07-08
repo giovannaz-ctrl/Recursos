@@ -43,90 +43,40 @@ def _load_datas():
     except Exception:
         return {}
 
-def _fetch_remote_state():
-    """Return (data_dict, sha) currently stored on GitHub. ({}, None) if file doesn't exist."""
-    import urllib.request, urllib.error, base64
+def _save_datas(d):
+    """Write JSON back to GitHub (create or update)."""
     try:
-        req = urllib.request.Request(_GH_API, headers=_gh_headers())
-        with urllib.request.urlopen(req) as resp:
-            raw = json.loads(resp.read().decode())
-        data = json.loads(base64.b64decode(raw["content"]).decode("utf-8"))
-        st.session_state["_gh_debug_fetch"] = {"ok": True, "n_keys": len(data), "sha": raw.get("sha")}
-        return data, raw.get("sha")
-    except urllib.error.HTTPError as e:
-        st.session_state["_gh_debug_fetch"] = {"ok": False, "status": e.code, "body": e.read().decode(errors="replace")[:500]}
-        return {}, None
-    except Exception as e:
-        st.session_state["_gh_debug_fetch"] = {"ok": False, "error": str(e)}
-        return {}, None
+        import urllib.request, base64
+        content_bytes = json.dumps(d, ensure_ascii=False, indent=2).encode("utf-8")
+        content_b64   = base64.b64encode(content_bytes).decode()
 
-def _save_datas(updates, max_retries=3):
-    """
-    Merge `updates` (dict of changed keys) into the latest remote JSON and
-    write it back to GitHub. Retries automatically on 409 Conflict by
-    re-fetching the current SHA + content and re-applying the merge.
-    """
-    import urllib.request, urllib.error, base64
-
-    _debug = {"pat_set": bool(st.secrets.get("GITHUB_PAT", "")), "attempts": []}
-
-    last_err = None
-    for _attempt in range(max_retries):
-        _step = {"attempt": _attempt + 1}
+        # Get current SHA (needed for update)
+        sha = None
         try:
-            remote_data, sha = _fetch_remote_state()
-            _step["sha_found"] = sha
-
-            # Merge: local updates win only for the keys they touch,
-            # everything else from GitHub is preserved (avoids clobbering
-            # concurrent edits from other sessions).
-            merged = {**remote_data, **updates}
-
-            content_bytes = json.dumps(merged, ensure_ascii=False, indent=2).encode("utf-8")
-            content_b64   = base64.b64encode(content_bytes).decode()
-
-            payload = {
-                "message": "update Data_entrada_saida.json",
-                "content": content_b64,
-                "branch":  _GH_BRANCH,
-            }
-            if sha:
-                payload["sha"] = sha
-
-            req = urllib.request.Request(
-                _GH_API,
-                data=json.dumps(payload).encode(),
-                headers={**_gh_headers(), "Content-Type": "application/json"},
-                method="PUT",
-            )
+            req = urllib.request.Request(_GH_API, headers=_gh_headers())
             with urllib.request.urlopen(req) as resp:
-                _step["status"] = resp.status
-                _resp_body = json.loads(resp.read().decode())
-                _step["new_sha"] = _resp_body.get("content", {}).get("sha")
-            _debug["attempts"].append(_step)
-            _debug["result"] = "success"
-            st.session_state["_gh_debug"] = _debug
-            _load_datas.clear()   # invalidate cache after write
-            return True
-        except urllib.error.HTTPError as e:
-            _body = e.read().decode(errors="replace")[:500]
-            _step["status"] = e.code
-            _step["body"] = _body
-            _debug["attempts"].append(_step)
-            last_err = e
-            if e.code == 409:
-                continue
-            break
-        except Exception as e:
-            _step["error"] = str(e)
-            _debug["attempts"].append(_step)
-            last_err = e
-            break
+                sha = json.loads(resp.read().decode()).get("sha")
+        except Exception:
+            pass  # file doesn't exist yet → create
 
-    _debug["result"] = "failed"
-    st.session_state["_gh_debug"] = _debug
-    st.warning(f"Não foi possível salvar no GitHub: {last_err}")
-    return False
+        payload = {
+            "message": "update Data_entrada_saida.json",
+            "content": content_b64,
+            "branch":  _GH_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+
+        req = urllib.request.Request(
+            _GH_API,
+            data=json.dumps(payload).encode(),
+            headers={**_gh_headers(), "Content-Type": "application/json"},
+            method="PUT",
+        )
+        urllib.request.urlopen(req)
+        _load_datas.clear()   # invalidate cache after write
+    except Exception as e:
+        st.warning(f"Não foi possível salvar no GitHub: {e}")
 
 def _entry_key(consultor, projeto):
     return f"{consultor}|{projeto}"
@@ -272,8 +222,14 @@ def load_data(file_bytes: bytes):
     df_cockpit_raw = pd.read_excel(BytesIO(file_bytes), sheet_name=sheets[s1_key] if s1_key else 0)
     df_cockpit_raw.columns = [c.strip() for c in df_cockpit_raw.columns]
 
+    # Papéis de gestão/liderança: não são alocação técnica, então são
+    # capturados à parte (Projeto → Nome) e não entram no Treemap, nos
+    # cálculos de slot/complexidade nem no filtro de "Módulo".
+    SPECIAL_ROLES = ["Gerente de Projeto", "Líder Técnico"]
+
     rows = []
     vagas_rows = []
+    special_role_rows = []
     for _, row in df_cockpit_raw.iterrows():
         projeto = str(row.get("Projeto", "")).strip()
         perfil  = str(row.get("Perfil", "")).strip()
@@ -283,6 +239,18 @@ def load_data(file_bytes: bytes):
         if not projeto or projeto == "nan":
             continue
         client = get_client_from_project(projeto)
+
+        if perfil in SPECIAL_ROLES:
+            for part in (raw_prin.split(",") if raw_prin.strip() not in ("", "nan") else []):
+                name  = extract_name(part.strip())
+                email = extract_email(part.strip())
+                if not name or name.lower() == "nan":
+                    continue
+                special_role_rows.append({
+                    "Projeto": projeto, "Cliente": client,
+                    "Papel": perfil, "Nome": name, "Email": email,
+                })
+            continue
         golive_raw  = row.get("Go line") or row.get("Go Live") or row.get("Go live")
         golive      = pd.Timestamp(golive_raw) if golive_raw is not None and pd.notna(golive_raw) else None
         senior_raw  = row.get("Senioridade", None)
@@ -331,6 +299,24 @@ def load_data(file_bytes: bytes):
                                    "Peso Dedicação": dedicacao, "GoLive": golive})
 
     df1 = pd.DataFrame(rows).drop_duplicates()
+
+    # ── Papéis de gestão/liderança (Gerente de Projeto, Líder Técnico...) ──
+    # Uma coluna por papel, mesclada em df1 por Projeto.
+    df_papeis = pd.DataFrame(special_role_rows).drop_duplicates()
+    for _role in SPECIAL_ROLES:
+        if not df_papeis.empty and _role in df_papeis["Papel"].values:
+            _map = (df_papeis[df_papeis["Papel"] == _role]
+                    .drop_duplicates(subset=["Projeto"])[["Projeto", "Nome"]]
+                    .rename(columns={"Nome": _role}))
+            df1 = df1.merge(_map, on="Projeto", how="left")
+        else:
+            df1[_role] = None
+        df1[_role] = df1[_role].fillna("— Não definido —")
+
+    # Mantém nome legado para compatibilidade (usado em outras partes do app)
+    df_gerentes = (df_papeis[df_papeis["Papel"] == "Gerente de Projeto"]
+                   .rename(columns={"Nome": "Gerente de Projeto", "Email": "Email Gerente"})
+                   if not df_papeis.empty else pd.DataFrame(columns=["Projeto","Cliente","Gerente de Projeto","Email Gerente"]))
 
     # ── Go Live conflict table ────────────────────────────────────
     _gl_cols = ["Consultor","Email","Cliente","Projeto","GoLive"]
@@ -453,8 +439,7 @@ def load_data(file_bytes: bytes):
         hf_raw    = row.get("Hora fim") or row.get("Hora Fim")
 
         if not recurso or recurso.lower() in ("nan", "nat", "none", ""): continue
-        if not projeto or projeto.lower() in ("nan", "nat", "none", ""):
-            projeto = "(Sem projeto)"
+        if not projeto or projeto.lower() in ("nan", "nat", "none", ""): continue
 
         # Extract name and email — both old format ('Nome <email>') and new ('Nome <email>;')
         if "<" in recurso:
@@ -503,8 +488,6 @@ def load_data(file_bytes: bytes):
     email_col = next((c for c in df_rec_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
     _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
     modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
-    # "Gerente de Projetos" is an 'x'-flag column like the module columns, not free text
-    gp_col = next((c for c in df_rec_raw.columns if "gerente" in c.lower() and "projeto" in c.lower()), None)
 
     rec_rows = []
     for _, row in df_rec_raw.iterrows():
@@ -515,14 +498,12 @@ def load_data(file_bytes: bytes):
         specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
-        is_gp4 = bool(gp_col) and str(row.get(gp_col, "")).strip().lower() == "x"
         rec_rows.append({
             "Consultor":    consultor,
             "Email":        email_raw,
             "Especialidades": specs,
             "Modulos":      ", ".join(specs),
             "Senioridade":  senioridade4,
-            "GerenteDeProjetos": is_gp4,
         })
 
     df_rec = pd.DataFrame(rec_rows)
@@ -548,7 +529,7 @@ def load_data(file_bytes: bytes):
         except Exception:
             pass
 
-    return df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring
+    return df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring, df_gerentes, df_papeis
 
 
 def kpi_html(value, label, variant=""):
@@ -607,7 +588,7 @@ with st.spinner("Processando dados…"):
         except Exception as e:
             st.error(f"Não foi possível carregar o arquivo do repositório: {e}")
             st.stop()
-    df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring = load_data(file_bytes)
+    df1, df2, df3, df_vagas, df_rec, df_golive, df_hiring, df_gerentes, df_papeis = load_data(file_bytes)
 
 
 # Build project→color map (shared across tabs)
@@ -653,7 +634,7 @@ with tab1:
 
     # ── Filters ─────────────────────────────────────────────────
     with st.expander("🔍 Filtros", expanded=False):
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
         f_cons  = c1.multiselect("Consultor",  sorted(df1["Consultor"].dropna().unique()), key="t1_cons")
         f_proj  = c2.multiselect("Projeto",    sorted(df1["Projeto"].dropna().unique()),   key="t1_proj")
         f_cli   = c3.multiselect("Cliente",    sorted(df1["Cliente"].dropna().unique()),   key="t1_cli")
@@ -661,20 +642,37 @@ with tab1:
         _all_mods = sorted(set(df1["Módulo"].dropna().unique()) | set(df_vagas["Perfil"].dropna().unique()))
         f_mod   = c4.multiselect("Módulo", _all_mods, key="t1_mod")
         f_fase  = c5.multiselect("Fase",       sorted(df1["Fase"].dropna().unique()) if "Fase" in df1.columns else [], key="t1_fase")
+        f_ger   = c6.multiselect("Gerente de Projeto", sorted(df1["Gerente de Projeto"].dropna().unique()), key="t1_ger")
+        f_lider = c7.multiselect("Líder Técnico", sorted(df1["Líder Técnico"].dropna().unique()), key="t1_lider")
 
     dft = df1.copy()
-    if f_cons: dft = dft[dft["Consultor"].isin(f_cons)]
-    if f_proj: dft = dft[dft["Projeto"].isin(f_proj)]
-    if f_cli:  dft = dft[dft["Cliente"].isin(f_cli)]
-    if f_mod:  dft = dft[dft["Módulo"].isin(f_mod)]
-    if f_fase: dft = dft[dft["Fase"].isin(f_fase)]
+    if f_cons:  dft = dft[dft["Consultor"].isin(f_cons)]
+    if f_proj:  dft = dft[dft["Projeto"].isin(f_proj)]
+    if f_cli:   dft = dft[dft["Cliente"].isin(f_cli)]
+    if f_mod:   dft = dft[dft["Módulo"].isin(f_mod)]
+    if f_fase:  dft = dft[dft["Fase"].isin(f_fase)]
+    if f_ger:   dft = dft[dft["Gerente de Projeto"].isin(f_ger)]
+    if f_lider: dft = dft[dft["Líder Técnico"].isin(f_lider)]
 
     # Also filter vagas by same filters
     df_vagas_f_tab1 = df_vagas.copy()
-    if f_proj: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Projeto"].isin(f_proj)]
-    if f_cli:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Cliente"].isin(f_cli)]
-    if f_mod:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Perfil"].isin(f_mod)]
-    if f_fase: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Fase"].isin(f_fase)] if "Fase" in df_vagas_f_tab1.columns else df_vagas_f_tab1
+    for _role in ["Gerente de Projeto", "Líder Técnico"]:
+        if not df_papeis.empty and _role in df_papeis["Papel"].values:
+            df_vagas_f_tab1 = df_vagas_f_tab1.merge(
+                df_papeis[df_papeis["Papel"] == _role]
+                    .drop_duplicates(subset=["Projeto"])[["Projeto", "Nome"]]
+                    .rename(columns={"Nome": _role}),
+                on="Projeto", how="left",
+            )
+        else:
+            df_vagas_f_tab1[_role] = None
+        df_vagas_f_tab1[_role] = df_vagas_f_tab1[_role].fillna("— Não definido —")
+    if f_proj:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Projeto"].isin(f_proj)]
+    if f_cli:   df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Cliente"].isin(f_cli)]
+    if f_mod:   df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Perfil"].isin(f_mod)]
+    if f_fase:  df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Fase"].isin(f_fase)] if "Fase" in df_vagas_f_tab1.columns else df_vagas_f_tab1
+    if f_ger:   df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Gerente de Projeto"].isin(f_ger)]
+    if f_lider: df_vagas_f_tab1 = df_vagas_f_tab1[df_vagas_f_tab1["Líder Técnico"].isin(f_lider)]
 
     # Global max (unfiltered) keeps color scale stable across filters
     _global_max_proj = max(df1.groupby("Consultor")["Projeto"].nunique().max(), 2)
@@ -832,30 +830,32 @@ with tab1:
                 unsafe_allow_html=True,
             )
             st.dataframe(
-                detail[["Consultor","Projeto","Cliente","M\xf3dulo"]].drop_duplicates(),
+                detail[["Consultor","Projeto","Cliente","M\xf3dulo","Gerente de Projeto","Líder Técnico"]].drop_duplicates(),
                 use_container_width=True, hide_index=True,
             )
 
     # ── Table ────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
+
     # Build display: pivot Principal + Sombra into same row
     if "Papel" in dft.columns and "Papel" in df1.columns:
         _prin = (dft[dft["Papel"] == "Principal"]
-                 [["Cliente","Projeto","Fase","Módulo","Consultor"]]
+                 [["Cliente","Projeto","Fase","Módulo","Consultor","Gerente de Projeto","Líder Técnico"]]
                  .rename(columns={"Consultor":"Consultor Principal"}))
         _somb = (df1[df1["Papel"] == "Sombra"]
                  [["Projeto","Módulo","Consultor"]]
                  .rename(columns={"Consultor":"Consultor Sombra"})
                  .drop_duplicates())
         display = _prin.merge(_somb, on=["Projeto","Módulo"], how="left")
-        display = display[["Cliente","Projeto","Fase","Módulo","Consultor Principal","Consultor Sombra"]].drop_duplicates()
+        display = display[["Cliente","Projeto","Fase","Módulo","Consultor Principal","Consultor Sombra","Gerente de Projeto","Líder Técnico"]].drop_duplicates()
         display["Consultor Sombra"] = display["Consultor Sombra"].fillna("—")
     else:
-        display = dft[["Consultor","Cliente","Projeto","Módulo"]].copy()
+        display = dft[["Consultor","Cliente","Projeto","Módulo","Gerente de Projeto","Líder Técnico"]].copy()
         display.rename(columns={"Consultor":"Consultor Principal"}, inplace=True)
 
     # ── Tabela Detalhada + Datas editáveis ───────────────────────
     st.markdown('<div class="section-title">Tabela Detalhada</div>', unsafe_allow_html=True)
-    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. A data é salva automaticamente.")
+    st.caption("Clique em qualquer célula de 📅 Entrada ou 🏁 Saída para editar. Clique em 💾 Salvar após editar.")
 
     _datas = st.session_state["datas_entrada"]
 
@@ -888,50 +888,37 @@ with tab1:
             "Módulo":               st.column_config.TextColumn("Módulo",              width="medium", disabled=True),
             "Consultor Principal":  st.column_config.TextColumn("Consultor Principal", width="medium", disabled=True),
             "Consultor Sombra":     st.column_config.TextColumn("👥 Sombra",           width="medium", disabled=True),
+            "Gerente de Projeto":   st.column_config.TextColumn("🧑‍💼 Gerente de Projeto", width="medium", disabled=True),
+            "Líder Técnico":        st.column_config.TextColumn("🛠️ Líder Técnico",        width="medium", disabled=True),
             "📅 Entrada":           st.column_config.DateColumn("📅 Entrada", width="small", format="DD/MM/YYYY"),
             "🏁 Saída":             st.column_config.DateColumn("🏁 Saída",   width="small", format="DD/MM/YYYY"),
         },
         key="tabela_detalhada_editor",
     )
 
-    # Detect changes and save automatically (no button — runs every rerun,
-    # but only actually writes when something differs from what's already
-    # stored in _datas, so it doesn't re-save on every unrelated interaction).
-    _changed = False
-    _updates = {}   # only the keys touched in this edit → sent to GitHub via merge
-    for _, _row in _edited.iterrows():
-        _cons = _row.get("Consultor Principal", "")
-        _proj = _row.get("Projeto", "")
-        if not _cons or not _proj: continue
-        _key  = _entry_key(_cons, _proj)
-        _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
-        _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
-        _cur  = _datas.get(_key, {})
-        _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
-        _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
-        if _e != _cur_e or _s != _cur_s:
-            _new_val = {"entrada": _e, "saida": _s}
-            _datas[_key] = _new_val
-            _updates[_key] = _new_val
-            _changed = True
-
-    if _changed:
-        st.session_state["datas_entrada"] = _datas
-        if _save_datas(_updates):
-            st.toast("💾 Data salva automaticamente!")
-        # if it failed, the warning from _save_datas is already shown;
-        # local session_state keeps the edit so the user doesn't lose it
-
-    with st.expander("🔧 Diagnóstico de salvamento (GitHub) — temporário"):
-        st.write("PAT configurado:", bool(st.secrets.get("GITHUB_PAT", "")))
-        st.write("Repositório:", _GH_REPO, "| Arquivo:", _GH_FILE, "| Branch:", _GH_BRANCH)
-        if "_gh_debug" in st.session_state:
-            st.json(st.session_state["_gh_debug"])
+    # Detect changes and save
+    if st.button("💾 Salvar datas", key="dt_save_table"):
+        _changed = False
+        for _, _row in _edited.iterrows():
+            _cons = _row.get("Consultor Principal", "")
+            _proj = _row.get("Projeto", "")
+            if not _cons or not _proj: continue
+            _key  = _entry_key(_cons, _proj)
+            _e    = str(_row["📅 Entrada"]) if _row["📅 Entrada"] is not None and str(_row["📅 Entrada"]) != "None" else ""
+            _s    = str(_row["🏁 Saída"])   if _row["🏁 Saída"]   is not None and str(_row["🏁 Saída"])   != "None" else ""
+            _cur  = _datas.get(_key, {})
+            _cur_e = _cur.get("entrada","") if isinstance(_cur, dict) else ""
+            _cur_s = _cur.get("saida","")   if isinstance(_cur, dict) else ""
+            if _e != _cur_e or _s != _cur_s:
+                _datas[_key] = {"entrada": _e, "saida": _s}
+                _changed = True
+        if _changed:
+            st.session_state["datas_entrada"] = _datas
+            _save_datas(_datas)
+            st.success("Datas salvas!")
+            st.rerun()
         else:
-            st.caption("Ainda não houve tentativa de salvar nesta sessão.")
-        if "_gh_debug_fetch" in st.session_state:
-            st.caption("Última leitura do GitHub:")
-            st.json(st.session_state["_gh_debug_fetch"])
+            st.info("Nenhuma alteração detectada.")
 
     st.download_button("⬇ Exportar Excel", to_excel_bytes(display),
                        file_name="alocacao_consultores.xlsx",
@@ -1212,25 +1199,14 @@ with tab4:
         _all_cons_names = sorted(_act_names | _ws_only_names)
 
         # ── Filtro ───────────────────────────────────────────────
-        _fa_c1, _fa_c2 = st.columns(2)
-        with _fa_c1:
-            fa_cons = st.multiselect(
-                "Filtrar por Consultor",
-                _all_cons_names,
-                key="t3_cons",
-                placeholder="Todos os consultores…",
-            )
-        with _fa_c2:
-            fa_proj = st.multiselect(
-                "Filtrar por Projeto",
-                sorted(dfa_all["Projeto"].dropna().unique()),
-                key="t3_proj",
-                placeholder="Todos os projetos…",
-            )
+        fa_cons = st.multiselect(
+            "Filtrar por Consultor",
+            _all_cons_names,
+            key="t3_cons",
+            placeholder="Todos os consultores…",
+        )
         if fa_cons:
             dfa_all = dfa_all[dfa_all["Consultor"].isin(fa_cons)]
-        if fa_proj:
-            dfa_all = dfa_all[dfa_all["Projeto"].isin(fa_proj)]
 
         # Week dates
         _dates_act = dfa_all["Data"].dropna()
@@ -1311,20 +1287,11 @@ with tab4:
             )
 
         # ── Quem não apontou esta semana ────────────────────────
-        # Conta como "apontou" qualquer linha de atividade da pessoa, mesmo que
-        # Projeto, Atividade ou Data estejam em branco — qualidade do preenchimento
-        # é analisada à parte, aqui só interessa saber se a pessoa registrou algo.
-        _apontaram_com_data_emails = set(
+        _apontaram_emails = set(
             str(r["Email"]).strip().lower()
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
-        _apontaram_sem_data_emails = set(
-            str(r["Email"]).strip().lower()
-            for _, r in df3[df3["Data"].isna()].iterrows()
-            if str(r.get("Email","")).strip()
-        )
-        _apontaram_emails = _apontaram_com_data_emails | _apontaram_sem_data_emails
         _nao_apontaram = sorted([
             str(_rr.get("Consultor","")).strip()
             for _, _rr in df_rec.iterrows()
@@ -1332,37 +1299,58 @@ with tab4:
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-            and not bool(_rr.get("GerenteDeProjetos", False))
         ])
 
         if _nao_apontaram:
             st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
                         unsafe_allow_html=True)
 
-            _na_total = len(_nao_apontaram)
-            st.markdown(
-                f"<div style='font-size:.82rem;color:#94a3b8;margin-bottom:.5rem;'>"
-                f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
-                unsafe_allow_html=True,
-            )
+            _na_page_size = 10
+            _na_total     = len(_nao_apontaram)
+            _na_n_pages   = max(1, -(-_na_total // _na_page_size))
 
-            _df_na = pd.DataFrame({"Consultor": _nao_apontaram})
-            st.dataframe(
-                _df_na,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Consultor": st.column_config.TextColumn("Consultor", width="large"),
-                },
-            )
+            if "na_page" not in st.session_state:
+                st.session_state["na_page"] = 0
+            if st.session_state["na_page"] >= _na_n_pages:
+                st.session_state["na_page"] = 0
 
-            st.download_button(
-                "⬇ Exportar Excel — Não apontaram",
-                to_excel_bytes(_df_na),
-                file_name="nao_apontaram_esta_semana.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_nao_apontaram",
+            _na_p1, _na_p2, _na_p3 = st.columns([1, 6, 1])
+            with _na_p1:
+                if st.button("◀", key="na_prev") and st.session_state["na_page"] > 0:
+                    st.session_state["na_page"] -= 1
+                    st.rerun()
+            with _na_p3:
+                if st.button("▶", key="na_next") and st.session_state["na_page"] < _na_n_pages - 1:
+                    st.session_state["na_page"] += 1
+                    st.rerun()
+            with _na_p2:
+                st.markdown(
+                    f"<div style='text-align:center;padding:.3rem 0;font-size:.82rem;color:#94a3b8;'>"
+                    f"Página {st.session_state['na_page']+1} de {_na_n_pages} · "
+                    f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
+                    unsafe_allow_html=True,
+                )
+
+            _na_start = st.session_state["na_page"] * _na_page_size
+            _na_page  = _nao_apontaram[_na_start:_na_start + _na_page_size]
+
+            _rows_na = "".join(
+                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{_na_start+i+1}.</td>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
+                f"</tr>"
+                for i, nome in enumerate(_na_page)
             )
+            st.markdown(f"""
+            <div style='max-width:480px;'>
+            <table style='width:100%;border-collapse:collapse;'>
+              <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
+              </tr></thead>
+              <tbody>{_rows_na}</tbody>
+            </table></div>
+            """, unsafe_allow_html=True)
         else:
             st.success("✅ Todos os consultores apontaram atividades esta semana!")
 
@@ -1380,8 +1368,6 @@ with tab4:
         if fa_cons:
             _fa_emails = {_ws_name_email.get(n,"") for n in fa_cons}
             _ws_check = _ws_check[_ws_check["Email"].str.lower().isin(_fa_emails)]
-        if fa_proj:
-            _ws_check = _ws_check[_ws_check["Projeto"].isin(fa_proj)]
 
         if dfa.empty and _ws_check.empty:
             st.info("Nenhuma atividade ou workshop registrado para esta semana.")
@@ -1401,8 +1387,6 @@ with tab4:
                 (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3) &
                 (df2["Consultor"].str.strip() != "")
             ].copy()
-            if fa_proj:
-                _ws_week_all = _ws_week_all[_ws_week_all["Projeto"].isin(fa_proj)]
 
             # Build email↔name maps from df2 (email is the reliable key)
             _ws_email_map  = {}   # name  → email
@@ -1658,19 +1642,17 @@ with tab4:
             st.plotly_chart(fig_gantt, use_container_width=True)
 
         # ── Detail table ──────────────────────────────────────────
-        show3 = dfa[["Consultor","Projeto","Atividade","Fase","Data","Horas"]].copy()
-        if not show3.empty:
-            show3["Data"]  = show3["Data"].dt.strftime("%d/%m/%Y")
-            show3["Horas"] = show3["Horas"].round(2)
-            show3 = show3.sort_values(["Consultor","Data"])
-
         with st.expander("📄 Detalhe das atividades da semana"):
-            if show3.empty:
+            if dfa.empty:
                 st.info("Sem atividades nesta semana.")
             else:
-                st.dataframe(show3, use_container_width=True, hide_index=True)
+                show3 = dfa[["Consultor","Projeto","Atividade","Fase","Data","Horas"]].copy()
+                show3["Data"]  = show3["Data"].dt.strftime("%d/%m/%Y")
+                show3["Horas"] = show3["Horas"].round(2)
+                st.dataframe(show3.sort_values(["Consultor","Data"]),
+                             use_container_width=True, hide_index=True)
 
-        st.download_button("⬇ Exportar Excel", to_excel_bytes(show3),
+        st.download_button("⬇ Exportar Excel", to_excel_bytes(dfa),
                            file_name="planejamento_semanal.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 

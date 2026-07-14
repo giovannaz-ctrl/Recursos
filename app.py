@@ -1238,6 +1238,11 @@ with tab4:
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
+        import unicodedata as _ud
+        def _norm_atrib(s):
+            s = _ud.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii")
+            return s.strip().lower()
+        _ATRIB_EXCLUIR = {"gerente de projetos", "lider tecnico"}
         _nao_apontaram_full = sorted([
             (str(_rr.get("Consultor","")).strip(), str(_rr.get("Email","")).strip())
             for _, _rr in df_rec.iterrows()
@@ -1245,28 +1250,27 @@ with tab4:
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
+            and _norm_atrib(_rr.get("Senioridade","")) not in _ATRIB_EXCLUIR
         ], key=lambda x: x[0])
         _nao_apontaram = [nome for nome, _ in _nao_apontaram_full]
         _nao_apontaram_emails = [email for _, email in _nao_apontaram_full if email]
 
         if _nao_apontaram:
-            _na_title_col, _na_btn_col = st.columns([4, 1.3])
-            with _na_title_col:
-                st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
-                            unsafe_allow_html=True)
-            with _na_btn_col:
-                if _nao_apontaram_emails:
-                    _na_week_label = week_labels3[sel_idx3]
-                    _na_subject = urllib.parse.quote(f"Apontamento de atividades pendente - {_na_week_label}")
-                    _na_body = urllib.parse.quote(
-                        "Olá,\n\n"
-                        f"Identificamos que o apontamento de atividades da semana ({_na_week_label}) "
-                        "ainda não foi realizado. Por favor, regularize o quanto antes.\n\n"
-                        "Obrigado!"
-                    )
-                    _na_to = ",".join(_nao_apontaram_emails)
-                    _na_mailto = f"mailto:{_na_to}?subject={_na_subject}&body={_na_body}"
-                    st.link_button("✉️ Enviar e-mail", _na_mailto, use_container_width=True)
+            st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
+                        unsafe_allow_html=True)
+
+            if _nao_apontaram_emails:
+                _na_week_label = week_labels3[sel_idx3]
+                _na_subject = urllib.parse.quote(f"Apontamento de atividades pendente - {_na_week_label}")
+                _na_body = urllib.parse.quote(
+                    "Olá,\n\n"
+                    f"Identificamos que o apontamento de atividades da semana ({_na_week_label}) "
+                    "ainda não foi realizado. Por favor, regularize o quanto antes.\n\n"
+                    "Obrigado!"
+                )
+                _na_to = ",".join(_nao_apontaram_emails)
+                _na_mailto = f"mailto:{_na_to}?subject={_na_subject}&body={_na_body}"
+                st.link_button("✉️ Enviar e-mail para pendentes", _na_mailto)
 
             _na_page_size = 10
             _na_total     = len(_nao_apontaram)

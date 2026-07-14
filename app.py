@@ -13,6 +13,11 @@ import re
 from io import BytesIO
 import json, os
 import urllib.parse
+import unicodedata as _unicodedata
+
+def _norm(s):
+    s = _unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+    return s.strip().lower()
 
 # ─────────────────────────────────────────────
 # ENTRY DATES — persist in GitHub via API
@@ -451,7 +456,10 @@ def load_data(file_bytes: bytes):
 
     # Email column is "Unnamed: 1" when header row has no label
     email_col = next((c for c in df_rec_raw.columns if "unnamed" in c.lower() or "email" in c.lower()), None)
-    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
+    _gp_col = next((c for c in df_rec_raw.columns if _norm(c) == "gerente de projetos"), None)
+    _lt_col = next((c for c in df_rec_raw.columns if _norm(c) in ("lider tecnico",)), None)
+    _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0",
+                      _gp_col or "", _lt_col or ""}
     modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
 
     rec_rows = []
@@ -463,12 +471,16 @@ def load_data(file_bytes: bytes):
         specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
+        is_gp = bool(_gp_col) and str(row.get(_gp_col,"")).strip().lower() == "x"
+        is_lt = bool(_lt_col) and str(row.get(_lt_col,"")).strip().lower() == "x"
         rec_rows.append({
             "Consultor":    consultor,
             "Email":        email_raw,
             "Especialidades": specs,
             "Modulos":      ", ".join(specs),
             "Senioridade":  senioridade4,
+            "GerenteProjetos": is_gp,
+            "LiderTecnico": is_lt,
         })
 
     df_rec = pd.DataFrame(rec_rows)
@@ -1238,11 +1250,6 @@ with tab4:
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
-        import unicodedata as _ud
-        def _norm_atrib(s):
-            s = _ud.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii")
-            return s.strip().lower()
-        _ATRIB_EXCLUIR = {"gerente de projetos", "lider tecnico"}
         _nao_apontaram_full = sorted([
             (str(_rr.get("Consultor","")).strip(), str(_rr.get("Email","")).strip())
             for _, _rr in df_rec.iterrows()
@@ -1250,7 +1257,8 @@ with tab4:
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-            and _norm_atrib(_rr.get("Senioridade","")) not in _ATRIB_EXCLUIR
+            and not _rr.get("GerenteProjetos", False)
+            and not _rr.get("LiderTecnico", False)
         ], key=lambda x: x[0])
         _nao_apontaram = [nome for nome, _ in _nao_apontaram_full]
         _nao_apontaram_emails = [email for _, email in _nao_apontaram_full if email]

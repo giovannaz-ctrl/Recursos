@@ -10,9 +10,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import re
-import unicodedata
 from io import BytesIO
 import json, os
+import urllib.parse
 
 # ─────────────────────────────────────────────
 # ENTRY DATES — persist in GitHub via API
@@ -404,8 +404,7 @@ def load_data(file_bytes: bytes):
         hf_raw    = row.get("Hora fim") or row.get("Hora Fim")
 
         if not recurso or recurso.lower() in ("nan", "nat", "none", ""): continue
-        if not projeto or projeto.lower() in ("nan", "nat", "none", ""):
-            projeto = "Sem Projeto / Interno"
+        if not projeto or projeto.lower() in ("nan", "nat", "none", ""): continue
 
         # Extract name and email — both old format ('Nome <email>') and new ('Nome <email>;')
         if "<" in recurso:
@@ -455,32 +454,13 @@ def load_data(file_bytes: bytes):
     _non_mod_cols = {"Consultor", email_col or "", "Senioridade", "senioridade", "Status", "Unnamed: 0"}
     modulos   = [c for c in df_rec_raw.columns if c not in _non_mod_cols and not str(c).lower().startswith("unnamed")]
 
-    def _strip_accents(txt):
-        return "".join(
-            c for c in unicodedata.normalize("NFKD", txt) if not unicodedata.combining(c)
-        )
-
-    # Colunas de especialidade que, quando marcadas com "x", indicam que o
-    # consultor é Gerente de Projetos ou Líder Técnico — esses consultores não
-    # devem aparecer na aba de Recursos (nem em listas derivadas, como "Não
-    # apontaram esta semana").
-    _EXCLUDED_ROLE_COLS = [
-        c for c in modulos
-        if _strip_accents(str(c)).strip().lower() in ("gerente de projetos", "gerente de projeto", "lider tecnico", "lider tecnica")
-    ]
-
     rec_rows = []
     for _, row in df_rec_raw.iterrows():
         consultor = str(row.get("Consultor","")).strip()
         email_raw = str(row.get(email_col,"")).strip().lower() if email_col else ""
         if not consultor or consultor == "nan":
             continue
-        if any(str(row.get(rc,"")).strip().lower() == "x" for rc in _EXCLUDED_ROLE_COLS):
-            continue
-        specs = [
-            m for m in modulos
-            if m not in _EXCLUDED_ROLE_COLS and str(row.get(m,"")).strip().lower() == "x"
-        ]
+        specs = [m for m in modulos if str(row.get(m,"")).strip().lower() == "x"]
         senior_raw4  = row.get("Senioridade", None)
         senioridade4 = str(senior_raw4).strip() if senior_raw4 is not None and pd.notna(senior_raw4) else "Sênior"
         rec_rows.append({
@@ -1164,24 +1144,15 @@ with tab4:
         }
         _all_cons_names = sorted(_act_names | _ws_only_names)
 
-        # ── Filtros ──────────────────────────────────────────────
-        _fc1, _fc2 = st.columns(2)
-        fa_cons = _fc1.multiselect(
+        # ── Filtro ───────────────────────────────────────────────
+        fa_cons = st.multiselect(
             "Filtrar por Consultor",
             _all_cons_names,
             key="t3_cons",
             placeholder="Todos os consultores…",
         )
-        fa_proj = _fc2.multiselect(
-            "Filtrar por Projeto",
-            all_projects,
-            key="t3_proj",
-            placeholder="Todos os projetos…",
-        )
         if fa_cons:
             dfa_all = dfa_all[dfa_all["Consultor"].isin(fa_cons)]
-        if fa_proj:
-            dfa_all = dfa_all[dfa_all["Projeto"].isin(fa_proj)]
 
         # Week dates
         _dates_act = dfa_all["Data"].dropna()
@@ -1267,91 +1238,88 @@ with tab4:
             for _, r in dfa.iterrows()
             if str(r.get("Email","")).strip()
         )
-        _nao_apontaram = sorted([
-            str(_rr.get("Consultor","")).strip()
+        _nao_apontaram_full = sorted([
+            (str(_rr.get("Consultor","")).strip(), str(_rr.get("Email","")).strip())
             for _, _rr in df_rec.iterrows()
             if str(_rr.get("Consultor","")).strip()
             and str(_rr.get("Consultor","")).strip().lower() not in ("nan","nat","")
             and str(_rr.get("Email","")).strip().lower() not in _apontaram_emails
             and str(_rr.get("Email","")).strip() not in ("","nan","nat")
-        ])
+        ], key=lambda x: x[0])
+        _nao_apontaram = [nome for nome, _ in _nao_apontaram_full]
+        _nao_apontaram_emails = [email for _, email in _nao_apontaram_full if email]
 
         if _nao_apontaram:
-            st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
-                        unsafe_allow_html=True)
+            _na_title_col, _na_btn_col = st.columns([4, 1.3])
+            with _na_title_col:
+                st.markdown('<div class="section-title">⚠️ Não apontaram esta semana</div>',
+                            unsafe_allow_html=True)
+            with _na_btn_col:
+                if _nao_apontaram_emails:
+                    _na_week_label = week_labels3[sel_idx3]
+                    _na_subject = urllib.parse.quote(f"Apontamento de atividades pendente - {_na_week_label}")
+                    _na_body = urllib.parse.quote(
+                        "Olá,\n\n"
+                        f"Identificamos que o apontamento de atividades da semana ({_na_week_label}) "
+                        "ainda não foi realizado. Por favor, regularize o quanto antes.\n\n"
+                        "Obrigado!"
+                    )
+                    _na_to = ",".join(_nao_apontaram_emails)
+                    _na_mailto = f"mailto:{_na_to}?subject={_na_subject}&body={_na_body}"
+                    st.link_button("✉️ Enviar e-mail", _na_mailto, use_container_width=True)
 
-            _na_total = len(_nao_apontaram)
-            st.markdown(
-                f"<div style='text-align:right;padding:.3rem 0;font-size:.82rem;color:#94a3b8;'>"
-                f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
-                unsafe_allow_html=True,
-            )
+            _na_page_size = 10
+            _na_total     = len(_nao_apontaram)
+            _na_n_pages   = max(1, -(-_na_total // _na_page_size))
 
-            # Split into columns so the table spans the full page width instead
-            # of a narrow, left-stuck list.
-            _n_cols = 3 if _na_total > 8 else (2 if _na_total > 4 else 1)
-            _na_chunks = [[] for _ in range(_n_cols)]
-            for i, nome in enumerate(_nao_apontaram):
-                _na_chunks[i % _n_cols].append((i + 1, nome))
+            if "na_page" not in st.session_state:
+                st.session_state["na_page"] = 0
+            if st.session_state["na_page"] >= _na_n_pages:
+                st.session_state["na_page"] = 0
 
-            _na_tables = []
-            for chunk in _na_chunks:
-                rows_html = "".join(
-                    f"<tr style='border-bottom:1px solid #f1f5f9;'>"
-                    f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{num}.</td>"
-                    f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
-                    f"</tr>"
-                    for num, nome in chunk
+            _na_p1, _na_p2, _na_p3 = st.columns([1, 6, 1])
+            with _na_p1:
+                if st.button("◀", key="na_prev") and st.session_state["na_page"] > 0:
+                    st.session_state["na_page"] -= 1
+                    st.rerun()
+            with _na_p3:
+                if st.button("▶", key="na_next") and st.session_state["na_page"] < _na_n_pages - 1:
+                    st.session_state["na_page"] += 1
+                    st.rerun()
+            with _na_p2:
+                st.markdown(
+                    f"<div style='text-align:center;padding:.3rem 0;font-size:.82rem;color:#94a3b8;'>"
+                    f"Página {st.session_state['na_page']+1} de {_na_n_pages} · "
+                    f"{_na_total} de {_na_total+len(_apontaram_emails)} consultores</div>",
+                    unsafe_allow_html=True,
                 )
-                _na_tables.append(f"""
-                <table style='width:100%;border-collapse:collapse;'>
-                  <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
-                    <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
-                    <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
-                  </tr></thead>
-                  <tbody>{rows_html}</tbody>
-                </table>
-                """)
 
-            st.markdown(
-                "<div style='display:flex;gap:24px;width:100%;'>"
-                + "".join(f"<div style='flex:1;min-width:0;'>{t}</div>" for t in _na_tables)
-                + "</div>",
-                unsafe_allow_html=True,
+            _na_start = st.session_state["na_page"] * _na_page_size
+            _na_page  = _nao_apontaram[_na_start:_na_start + _na_page_size]
+
+            _rows_na = "".join(
+                f"<tr style='border-bottom:1px solid #f1f5f9;'>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#94a3b8;width:32px;'>{_na_start+i+1}.</td>"
+                f"<td style='padding:6px 12px;font-size:.82rem;color:#1e293b;'>{nome}</td>"
+                f"</tr>"
+                for i, nome in enumerate(_na_page)
             )
+            st.markdown(f"""
+            <div style='max-width:480px;'>
+            <table style='width:100%;border-collapse:collapse;'>
+              <thead><tr style='background:#fff7ed;border-bottom:2px solid #fed7aa;'>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;width:32px;'>#</th>
+                <th style='padding:6px 12px;font-size:.75rem;color:#9a3412;font-weight:600;text-align:left;'>Consultor</th>
+              </tr></thead>
+              <tbody>{_rows_na}</tbody>
+            </table></div>
+            """, unsafe_allow_html=True)
         else:
             st.success("✅ Todos os consultores apontaram atividades esta semana!")
 
         st.markdown("---")
 
-        st.markdown('<div class="section-title">Gantt da Semana</div>', unsafe_allow_html=True)
-
-        _g1, _g2 = st.columns(2)
-        fa_cons_g = _g1.multiselect(
-            "Filtrar por Consultor",
-            _all_cons_names,
-            key="t3_gantt_cons",
-            placeholder="Todos os consultores…",
-        )
-        fa_proj_g = _g2.multiselect(
-            "Filtrar por Projeto",
-            all_projects,
-            key="t3_gantt_proj",
-            placeholder="Todos os projetos…",
-        )
-
-        group_by_project = True  # Gantt agrupado sempre por Projeto
-
-        # Effective filters for the Gantt only: the local filter above takes
-        # precedence; if left empty, falls back to the tab-wide filter.
-        _eff_cons = fa_cons_g if fa_cons_g else fa_cons
-        _eff_proj = fa_proj_g if fa_proj_g else fa_proj
-
-        dfa_g = dfa.copy()
-        if fa_cons_g:
-            dfa_g = dfa_g[dfa_g["Consultor"].isin(fa_cons_g)]
-        if fa_proj_g:
-            dfa_g = dfa_g[dfa_g["Projeto"].isin(fa_proj_g)]
+        st.markdown('<div class="section-title">Gantt da Semana por Consultor</div>', unsafe_allow_html=True)
 
         # Check if there are workshops this week even if no activities
         _ws_check = df2[
@@ -1359,21 +1327,19 @@ with tab4:
             (df2["DataInicio"] <= week_end3) &
             (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
         ]
-        # Filter by selected consultants / project if any
-        if _eff_cons:
-            _fa_emails = {_ws_name_email.get(n,"") for n in _eff_cons}
+        # Filter by selected consultants if any
+        if fa_cons:
+            _fa_emails = {_ws_name_email.get(n,"") for n in fa_cons}
             _ws_check = _ws_check[_ws_check["Email"].str.lower().isin(_fa_emails)]
-        if _eff_proj:
-            _ws_check = _ws_check[_ws_check["Projeto"].isin(_eff_proj)]
 
-        if dfa_g.empty and _ws_check.empty:
+        if dfa.empty and _ws_check.empty:
             st.info("Nenhuma atividade ou workshop registrado para esta semana.")
         else:
             days_of_week = [week_start3 + timedelta(d) for d in range(5)]
             day_names3   = ["Seg","Ter","Qua","Qui","Sex"]
 
             # Build one Gantt bar per (Consultor, Projeto, Atividade, Data)
-            # x-axis: days of the week; y-axis: consultants (or projeto → consultor)
+            # x-axis: days of the week; y-axis: consultants
             # Each bar spans from HorasIni to HorasFim on the given day.
             # We use a Plotly figure with shapes for precision.
 
@@ -1384,8 +1350,6 @@ with tab4:
                 (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3) &
                 (df2["Consultor"].str.strip() != "")
             ].copy()
-            if _eff_proj:
-                _ws_week_all = _ws_week_all[_ws_week_all["Projeto"].isin(_eff_proj)]
 
             # Build email↔name maps from df2 (email is the reliable key)
             _ws_email_map  = {}   # name  → email
@@ -1398,7 +1362,7 @@ with tab4:
                     _ws_name_map[_we]  = _wn
 
             # Build email map from activities
-            _act_email_map = dfa_g.groupby("Consultor")["Email"].first().to_dict() if not dfa_g.empty else {}
+            _act_email_map = dfa.groupby("Consultor")["Email"].first().to_dict()
             # email → canonical name (prefer activity name, fallback to workshop name)
             _email_to_name = {v.lower(): k for k, v in _act_email_map.items() if v}
             for _we, _wn in _ws_name_map.items():
@@ -1410,10 +1374,10 @@ with tab4:
             _all_emails |= set(_ws_name_map.keys())
             all_cons_set = {_email_to_name[e] for e in _all_emails if e in _email_to_name}
 
-            # Apply effective consultant filter to gantt consultant list
-            if _eff_cons:
+            # Apply fa_cons filter to gantt consultant list
+            if fa_cons:
                 _fa_emails_g = set()
-                for _fn in _eff_cons:
+                for _fn in fa_cons:
                     _fe = _ws_name_email.get(_fn, "")
                     if not _fe:
                         _rows = dfa_all[dfa_all["Consultor"] == _fn]["Email"]
@@ -1423,96 +1387,31 @@ with tab4:
                     nm for nm in all_cons_set
                     if _ws_email_map.get(nm, "").lower() in _fa_emails_g
                     or _act_email_map.get(nm, "").lower() in _fa_emails_g
-                    or nm in _eff_cons
+                    or nm in fa_cons
                 }
 
             consultores = sorted(all_cons_set)
-
-            # Unified email map: name → email (needed to look up each consultant's workshops)
-            email_map3 = {**{v: k for k, v in _email_to_name.items()}, **_act_email_map}
-            for _wc, _we in _ws_email_map.items():
-                if _wc not in email_map3:
-                    email_map3[_wc] = _we
-
-            # Pre-compute each consultant's workshops this week (reused for grouping + drawing)
-            ws_by_consultant = {}
-            for c in consultores:
-                c_email = email_map3.get(c, "").lower()
-                if not c_email:
-                    ws_by_consultant[c] = df2.iloc[0:0]
-                    continue
-                ws_by_consultant[c] = df2[
-                    (df2["Email"].str.lower() == c_email) &
-                    (df2["DataInicio"].notna()) &
-                    (df2["DataInicio"] <= week_end3) &
-                    (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
-                ]
-                if _eff_proj:
-                    ws_by_consultant[c] = ws_by_consultant[c][ws_by_consultant[c]["Projeto"].isin(_eff_proj)]
-
-            # ── Build row ordering: one row per consultant, or per (Projeto, Consultor) ──
-            def _row_key(cons, proj):
-                return (proj, cons) if group_by_project else cons
-
-            if group_by_project:
-                _pairs = set()
-                for _, _r in dfa_g.iterrows():
-                    _pairs.add((_r["Projeto"], _r["Consultor"]))
-                for _c, _wsw in ws_by_consultant.items():
-                    for _, _wr in _wsw.iterrows():
-                        _pairs.add((_wr["Projeto"], _c))
-                _projects_sorted = sorted({p for p, _ in _pairs})
-                row_order = []
-                for p in _projects_sorted:
-                    for c in sorted({cc for (pp, cc) in _pairs if pp == p}):
-                        row_order.append((p, c))
-            else:
-                row_order = consultores
-
-            n_rows = len(row_order)
-            row_y  = {key: i for i, key in enumerate(reversed(row_order))}
+            # y positions: one row per consultant (bottom to top in plotly = reversed list)
+            cons_y = {c: i for i, c in enumerate(reversed(consultores))}
 
             fig_gantt = go.Figure()
 
-            # ── Background bands ─────────────────────────────────
-            if group_by_project:
-                # Shade + separate by project group, label the group in the left margin
-                _group_bounds = []  # (proj, y_min, y_max)
-                for p in _projects_sorted:
-                    ys = [row_y[k] for k in row_order if k[0] == p]
-                    _group_bounds.append((p, min(ys), max(ys)))
-                for gi, (p, y_min, y_max) in enumerate(_group_bounds):
-                    fig_gantt.add_shape(
-                        type="rect",
-                        x0=-0.5, x1=4.5,
-                        y0=y_min - 0.45, y1=y_max + 0.45,
-                        fillcolor="#f8fafc" if gi % 2 == 0 else "white",
-                        line_width=0, layer="below",
-                    )
-                    if gi > 0:
-                        fig_gantt.add_shape(
-                            type="line",
-                            x0=-0.5, x1=4.5,
-                            y0=y_max + 0.5, y1=y_max + 0.5,
-                            line=dict(color="#cbd5e1", width=1.5), layer="below",
-                        )
-            else:
-                # Background alternating bands per consultant row
-                for c, yi in row_y.items():
-                    fig_gantt.add_shape(
-                        type="rect",
-                        x0=-0.5, x1=4.5,
-                        y0=yi - 0.45, y1=yi + 0.45,
-                        fillcolor="#f8fafc" if yi % 2 == 0 else "white",
-                        line_width=0, layer="below",
-                    )
+            # Background alternating bands per consultant row
+            for c, yi in cons_y.items():
+                fig_gantt.add_shape(
+                    type="rect",
+                    x0=-0.5, x1=4.5,
+                    y0=yi - 0.45, y1=yi + 0.45,
+                    fillcolor="#f8fafc" if yi % 2 == 0 else "white",
+                    line_width=0, layer="below",
+                )
 
             # Day separator lines
             for d in range(5):
                 fig_gantt.add_shape(
                     type="line",
                     x0=d - 0.5, x1=d - 0.5,
-                    y0=-0.5, y1=n_rows - 0.5,
+                    y0=-0.5, y1=len(consultores) - 0.5,
                     line=dict(color="#e2e8f0", width=1), layer="below",
                 )
 
@@ -1523,7 +1422,7 @@ with tab4:
                 fig_gantt.add_shape(
                     type="rect",
                     x0=today_x - 0.48, x1=today_x + 0.48,
-                    y0=-0.5, y1=n_rows - 0.5,
+                    y0=-0.5, y1=len(consultores) - 0.5,
                     fillcolor="#eef2ff", line_width=0, layer="below",
                 )
 
@@ -1535,7 +1434,7 @@ with tab4:
             added_projects  = set()
             added_workshops = set()
 
-            for _, row in dfa_g.iterrows():
+            for _, row in dfa.iterrows():
                 c     = row["Consultor"]
                 proj  = row["Projeto"]
                 atv   = row["Atividade"]
@@ -1547,7 +1446,7 @@ with tab4:
                 if day_x < 0 or day_x > 4:
                     continue
 
-                yi     = row_y.get(_row_key(c, proj), 0)
+                yi     = cons_y.get(c, 0)
                 color  = proj_color.get(proj, "#6366f1")
                 day_hours = 9.0
                 x_start = day_x + (h_ini - 9.0) / day_hours * 0.9 - 0.45
@@ -1583,8 +1482,24 @@ with tab4:
                 ))
 
             # ── Workshop bars (lower half of row, slate color) ────
+            # Unified email map: name → email
+            email_map3 = {**{v: k for k, v in _email_to_name.items()}, **_act_email_map}
+            # Also direct name→email from workshop map
+            for _wc, _we in _ws_email_map.items():
+                if _wc not in email_map3:
+                    email_map3[_wc] = _we
+
             for c in consultores:
-                ws_week = ws_by_consultant.get(c, df2.iloc[0:0])
+                c_email = email_map3.get(c, "").lower()
+                if not c_email:
+                    continue
+                # Find workshops for this consultant in this week
+                ws_week = df2[
+                    (df2["Email"].str.lower() == c_email) &
+                    (df2["DataInicio"].notna()) &
+                    (df2["DataInicio"] <= week_end3) &
+                    (df2["DataFim"].fillna(df2["DataInicio"]) >= week_start3)
+                ]
                 for _, wrow in ws_week.iterrows():
                     ws_name = wrow["Workshop"]
                     ws_proj = wrow["Projeto"]
@@ -1595,7 +1510,7 @@ with tab4:
                         day_x = (d_cur - week_start3).days
                         if day_x < 0 or day_x > 4:
                             continue
-                        yi = row_y.get(_row_key(c, ws_proj), 0)
+                        yi = cons_y.get(c, 0)
                         ws_key = f"WS_{ws_name}"
                         show_ws_legend = ws_key not in added_workshops
                         added_workshops.add(ws_key)
@@ -1647,23 +1562,11 @@ with tab4:
                 legendgroup="__legend_ws",
             ))
 
-            def _proj_short(p, n=26):
-                p = str(p)
-                return p if len(p) <= n else p[: n - 1] + "…"
-
-            if group_by_project:
-                _yticktext = [
-                    f'<span style="color:#94a3b8;font-size:10px;">{_proj_short(p)}</span><br><b>{c}</b>'
-                    for (p, c) in row_y.keys()
-                ]
-            else:
-                _yticktext = list(row_y.keys())
-
             # Axes config
             fig_gantt.update_layout(
                 barmode="overlay",
-                height=max(260, n_rows * 50 + 80) if group_by_project else max(260, n_rows * 44 + 80),
-                margin=dict(l=10, r=0, t=60, b=20),
+                height=max(260, len(consultores) * 44 + 80),
+                margin=dict(l=0, r=0, t=60, b=20),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
                 showlegend=True,
@@ -1690,9 +1593,8 @@ with tab4:
                 ),
                 yaxis=dict(
                     tickmode="array",
-                    tickvals=list(row_y.values()),
-                    ticktext=_yticktext,
-                    automargin=True,
+                    tickvals=list(cons_y.values()),
+                    ticktext=list(cons_y.keys()),
                     showgrid=False,
                     zeroline=False,
                     fixedrange=True,
